@@ -7,7 +7,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from analysis_result import AnalysisResult
-from document_generator import generate_document, sanitize_title
+from document_generator import generate_document, sanitize_title, DocumentResult
 from zentao_client import ZentaoItem
 
 
@@ -29,11 +29,16 @@ class TestDocumentGenerator(unittest.TestCase):
             )
             doc = generate_document(item, analysis, output_root=td, generated_at="2026-05-21T10:00:00+08:00")
             self.assertEqual(doc.document_type, "PRD")
+            self.assertEqual(doc.title, "新增 登录")
             self.assertIn(os.path.join("prd", "PRD-story-1-新增_登录.md"), doc.document_path)
             content = open(doc.document_path, encoding="utf-8").read()
             self.assertIn("# PRD: 新增 登录", content)
+            self.assertIn("## 来源信息", content)
+            self.assertIn("条目类型: story", content)
             self.assertIn("## LLM 理解摘要", content)
             self.assertIn("部分完成", content)
+            self.assertIn("## 追踪信息", content)
+            self.assertIn("回写禅道: not_implemented", content)
 
     def test_bug_generates_issue(self):
         with tempfile.TemporaryDirectory() as td:
@@ -53,23 +58,68 @@ class TestDocumentGenerator(unittest.TestCase):
             )
             doc = generate_document(item, analysis, output_root=td)
             self.assertEqual(doc.document_type, "ISSUE")
+            self.assertEqual(doc.title, "登录崩溃")
+            self.assertIn(os.path.join("issue", "ISSUE-bug-2-登录崩溃.md"), doc.document_path)
             content = open(doc.document_path, encoding="utf-8").read()
             self.assertIn("# ISSUE: 登录崩溃", content)
+            self.assertIn("## 来源信息", content)
             self.assertIn("## 可能根因", content)
+            self.assertIn("## 追踪信息", content)
+            self.assertIn("回写禅道: not_implemented", content)
 
-    def test_diagnostic_document_for_error(self):
+    def test_diagnostic_document_still_in_prd(self):
+        """诊断文档仍使用 PRD 目录和文件名，document_type 仍为 PRD"""
         with tempfile.TemporaryDirectory() as td:
             item = ZentaoItem(id="3", type="requirement", title="T")
             analysis = AnalysisResult.from_error(item, "LLM 调用失败")
             doc = generate_document(item, analysis, output_root=td)
             self.assertTrue(doc.is_diagnostic)
+            self.assertEqual(doc.document_type, "PRD")
+            self.assertIn(os.path.join("prd", "PRD-requirement-3-T.md"), doc.document_path)
             content = open(doc.document_path, encoding="utf-8").read()
-            self.assertIn("诊断文档", content)
+            self.assertIn("# PRD: T", content)
+            self.assertIn("> 诊断文档：当前条目未能生成完整 PRD。", content)
             self.assertIn("LLM 调用失败", content)
+            self.assertIn("## 追踪信息", content)
+            self.assertIn("回写禅道: not_implemented", content)
+
+    def test_diagnostic_document_still_in_issue(self):
+        """诊断文档仍使用 ISSUE 目录和文件名，document_type 仍为 ISSUE"""
+        with tempfile.TemporaryDirectory() as td:
+            item = ZentaoItem(id="4", type="bug", title="Bug")
+            analysis = AnalysisResult.from_error(item, "超时")
+            doc = generate_document(item, analysis, output_root=td)
+            self.assertTrue(doc.is_diagnostic)
+            self.assertEqual(doc.document_type, "ISSUE")
+            self.assertIn(os.path.join("issue", "ISSUE-bug-4-Bug.md"), doc.document_path)
+            content = open(doc.document_path, encoding="utf-8").read()
+            self.assertIn("# ISSUE: Bug", content)
+            self.assertIn("> 诊断文档：当前条目未能生成完整 ISSUE。", content)
+
+    def test_unknown_type_notice(self):
+        """未知条目类型按 ISSUE 生成，并在文档中标记"""
+        with tempfile.TemporaryDirectory() as td:
+            item = ZentaoItem(id="5", type="custom_type", title="Custom")
+            analysis = AnalysisResult(
+                item_id="5",
+                item_type="custom_type",
+                item_title="Custom",
+                conclusion="部分完成",
+                evidence=["a.c"],
+                recommendations=["建议"],
+                verification=["验证"],
+                priority="中",
+                confidence="中",
+            )
+            doc = generate_document(item, analysis, output_root=td)
+            self.assertEqual(doc.document_type, "ISSUE")
+            content = open(doc.document_path, encoding="utf-8").read()
+            self.assertIn("未知条目类型 `custom_type`，按问题类文档生成", content)
 
     def test_sanitize_title(self):
         self.assertEqual(sanitize_title("A/B C__中文!"), "A_B_C_中文")
         self.assertEqual(sanitize_title("!!!"), "untitled")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

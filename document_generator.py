@@ -11,8 +11,8 @@ from analysis_result import AnalysisResult
 class DocumentResult:
     item_id: str
     item_type: str
-    item_title: str
-    document_type: str  # "PRD" | "ISSUE" | "DIAGNOSTIC"
+    title: str
+    document_type: str  # "PRD" | "ISSUE"
     document_path: str
     is_diagnostic: bool = False
     error: str = ""
@@ -73,20 +73,46 @@ def _build_llm_summary(analysis: AnalysisResult) -> str:
     return "\n".join(parts) if parts else "未提供 LLM 分析摘要。"
 
 
-def _render_prd(item: ZentaoItem, analysis: AnalysisResult, generated_at: str) -> str:
-    safe_title = sanitize_title(item.title)
+def _unknown_type_notice(item_type: str) -> str:
+    if item_type not in ("story", "requirement", "bug", "ticket", "feedback"):
+        return f"\n> 未知条目类型 `{item_type}`，按问题类文档生成。\n"
+    return ""
+
+
+def _track_section(document_path: str, writeback_status: str) -> str:
+    return f"""## 追踪信息
+
+- 输出文件: {document_path}
+- 回写禅道: {writeback_status}
+"""
+
+
+def _source_info(item: ZentaoItem, generated_at: str) -> str:
+    return f"""## 来源信息
+
+- 条目类型: {item.type}
+- 条目 ID: {item.id}
+- 状态: {item.status}
+- 优先级: {item.priority or "未提供"}
+- 生成时间: {generated_at}
+"""
+
+
+def _render_prd(item: ZentaoItem, analysis: AnalysisResult, generated_at: str, document_path: str, writeback_status: str) -> str:
     evidence = "\n".join(f"- {e}" for e in analysis.evidence) if analysis.evidence else "无"
     gaps = "\n".join(f"- {g}" for g in analysis.gaps) if analysis.gaps else "无"
     recommendations = "\n".join(f"- {r}" for r in analysis.recommendations) if analysis.recommendations else "无"
     verification = "\n".join(f"- {v}" for v in analysis.verification) if analysis.verification else "无"
 
+    diagnostic_banner = ""
+    if analysis.error or analysis.is_insufficient_evidence():
+        diagnostic_banner = "> 诊断文档：当前条目未能生成完整 PRD。\n\n"
+
     return f"""# PRD: {item.title}
 
-> 自动生成于 {generated_at}
-> 来源：禅道 {item.type} #{item.id}
-> 状态：{item.status}
+{diagnostic_banner}{_source_info(item, generated_at)}
 
-## 需求描述
+## 原始需求摘要
 
 {item.description or "未提供"}
 
@@ -104,7 +130,7 @@ def _render_prd(item: ZentaoItem, analysis: AnalysisResult, generated_at: str) -
 
 {evidence}
 
-## 未实现或部分实现点
+## 差异与缺口
 
 {gaps}
 
@@ -116,26 +142,31 @@ def _render_prd(item: ZentaoItem, analysis: AnalysisResult, generated_at: str) -
 
 {verification}
 
+{_track_section(document_path, writeback_status)}
+
 ---
 *本文档由 zentao-story-prd-analyzer 自动生成，仅供参考。*
 """
 
 
-def _render_issue(item: ZentaoItem, analysis: AnalysisResult, generated_at: str) -> str:
-    safe_title = sanitize_title(item.title)
+def _render_issue(item: ZentaoItem, analysis: AnalysisResult, generated_at: str, document_path: str, writeback_status: str) -> str:
     evidence = "\n".join(f"- {e}" for e in analysis.evidence) if analysis.evidence else "无"
     suspected = "\n".join(f"- {s}" for s in analysis.suspected_causes) if analysis.suspected_causes else "无"
     affected = "\n".join(f"- {a}" for a in analysis.affected_scope) if analysis.affected_scope else "无"
     recommendations = "\n".join(f"- {r}" for r in analysis.recommendations) if analysis.recommendations else "无"
     verification = "\n".join(f"- {v}" for v in analysis.verification) if analysis.verification else "无"
 
+    diagnostic_banner = ""
+    if analysis.error or analysis.is_insufficient_evidence():
+        diagnostic_banner = "> 诊断文档：当前条目未能生成完整 ISSUE。\n\n"
+
+    unknown_notice = _unknown_type_notice(item.type)
+
     return f"""# ISSUE: {item.title}
 
-> 自动生成于 {generated_at}
-> 来源：禅道 {item.type} #{item.id}
-> 状态：{item.status}
-
-## 问题描述
+{diagnostic_banner}{_source_info(item, generated_at)}
+{unknown_notice}
+## 问题描述摘要
 
 {item.description or "未提供"}
 
@@ -149,7 +180,7 @@ def _render_issue(item: ZentaoItem, analysis: AnalysisResult, generated_at: str)
 - **优先级**：{analysis.priority or "未评估"}
 - **可信度**：{analysis.confidence or "未评估"}
 
-## 相关证据
+## 代码证据
 
 {evidence}
 
@@ -165,33 +196,11 @@ def _render_issue(item: ZentaoItem, analysis: AnalysisResult, generated_at: str)
 
 {recommendations}
 
-## 验证建议
+## 复现与验证建议
 
 {verification}
 
----
-*本文档由 zentao-story-prd-analyzer 自动生成，仅供参考。*
-"""
-
-
-def _render_diagnostic(item: ZentaoItem, analysis: AnalysisResult, generated_at: str) -> str:
-    return f"""# 诊断文档：{item.title}
-
-> 自动生成于 {generated_at}
-> 来源：禅道 {item.type} #{item.id}
-> 状态：{item.status}
-
-## 说明
-
-本次分析未能生成完整的 PRD 或 ISSUE 文档。
-
-## 原因
-
-{analysis.error or "证据不足，无法做出可靠判断。"}
-
-## LLM 理解摘要
-
-{_build_llm_summary(analysis)}
+{_track_section(document_path, writeback_status)}
 
 ---
 *本文档由 zentao-story-prd-analyzer 自动生成，仅供参考。*
@@ -204,7 +213,7 @@ def generate_document(
     output_root: str = "docs",
     generated_at: Optional[str] = None,
 ) -> DocumentResult:
-    """生成 PRD/ISSUE/诊断 Markdown 文档"""
+    """生成单个 PRD/ISSUE Markdown 文档"""
     if generated_at is None:
         from datetime import datetime, timezone
         generated_at = datetime.now(timezone.utc).astimezone().isoformat()
@@ -213,22 +222,23 @@ def generate_document(
     is_diagnostic = bool(analysis.error) or analysis.is_insufficient_evidence()
 
     safe_title = sanitize_title(item.title)
-    if is_diagnostic:
-        subdir = "diagnostic"
-        filename = f"DIAG-{item.type}-{item.id}-{safe_title}.md"
-        content = _render_diagnostic(item, analysis, generated_at)
-    elif doc_type == "PRD":
+    if doc_type == "PRD":
         subdir = "prd"
         filename = f"PRD-{item.type}-{item.id}-{safe_title}.md"
-        content = _render_prd(item, analysis, generated_at)
     else:
         subdir = "issue"
         filename = f"ISSUE-{item.type}-{item.id}-{safe_title}.md"
-        content = _render_issue(item, analysis, generated_at)
 
     output_dir = os.path.join(output_root, subdir)
     os.makedirs(output_dir, exist_ok=True)
     document_path = os.path.join(output_dir, filename)
+
+    writeback_status = "not_implemented"
+
+    if doc_type == "PRD":
+        content = _render_prd(item, analysis, generated_at, document_path, writeback_status)
+    else:
+        content = _render_issue(item, analysis, generated_at, document_path, writeback_status)
 
     with open(document_path, "w", encoding="utf-8") as f:
         f.write(content)
@@ -236,8 +246,8 @@ def generate_document(
     return DocumentResult(
         item_id=item.id,
         item_type=item.type,
-        item_title=item.title,
-        document_type=doc_type if not is_diagnostic else "DIAGNOSTIC",
+        title=item.title,
+        document_type=doc_type,
         document_path=document_path,
         is_diagnostic=is_diagnostic,
         error=analysis.error,

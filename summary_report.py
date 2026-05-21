@@ -18,7 +18,7 @@ def build_summary_item(
     return {
         "item_id": item.id,
         "item_type": item.type,
-        "item_title": item.title,
+        "title": item.title,
         "status": item.status,
         "priority": item.priority,
         "document_type": document.document_type,
@@ -27,6 +27,7 @@ def build_summary_item(
         "conclusion": analysis.conclusion,
         "confidence": analysis.confidence,
         "has_error": bool(analysis.error or document.error),
+        "error": analysis.error or document.error,
         "insufficient_evidence": analysis.is_insufficient_evidence(),
         "evidence_count": len(analysis.evidence),
         "recommendation_count": len(analysis.recommendations),

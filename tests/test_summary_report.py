@@ -31,8 +31,12 @@ class TestSummaryReport(unittest.TestCase):
         writeback = {"supported": False, "status": "not_implemented"}
         data = build_summary_item(item, analysis, document, writeback)
         self.assertEqual(data["item_id"], "1")
+        self.assertEqual(data["title"], "Title")
         self.assertEqual(data["document_type"], "PRD")
         self.assertEqual(data["evidence_count"], 1)
+        self.assertIn("has_error", data)
+        self.assertIn("error", data)
+        self.assertEqual(data["error"], "")
         self.assertNotIn("raw_response", json.dumps(data, ensure_ascii=False))
         self.assertNotIn("secret raw", json.dumps(data, ensure_ascii=False))
 
