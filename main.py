@@ -9,9 +9,12 @@ from analyzer import analyze
 from document_generator import generate_document
 from summary_report import build_summary_item, write_summary_report
 from writeback import prepare_writeback_status
+from agent_client import AgentConfig
+from app_config import build_runtime_config
+from debug_bundle import build_debug_bundle
+from run_logger import RunLogger, redact_sensitive
 
 
-# ---------------------- 增量分析: 获取修改文件 ----------------------
 def get_modified_files(repo_path, last_commit=None):
     if last_commit:
         cmd = ["git", "-C", repo_path, "diff", "--name-only", f"{last_commit}...HEAD"]
@@ -21,7 +24,6 @@ def get_modified_files(repo_path, last_commit=None):
     return result.stdout.strip().split("\n")
 
 
-# ---------------------- 主流程 ----------------------
 def main():
     parser = argparse.ArgumentParser(description="zentao-story-prd-analyzer")
     parser.add_argument("--module", default="story", help="禅道模块 (story/requirement/bug/task/ticket/feedback)")
@@ -43,17 +45,30 @@ def main():
     parser.add_argument("--analyze", action="store_true", help="获取数据后继续执行代码分析和 PRD 生成")
     parser.add_argument("--repo-path", default=os.environ.get("REPO_PATH","."), help="代码仓库路径")
     parser.add_argument("--agent", default=os.environ.get("LLM_AGENT","codex"), help="LLM Agent")
+    parser.add_argument("--model", help="LLM 模型名，OpenAI/Codex 使用")
+    parser.add_argument("--agent-timeout", type=int, help="Agent 调用超时时间，单位秒")
+    parser.add_argument("--claude-command", help="Claude CLI 命令，默认 claude")
+    parser.add_argument("--claude-prompt-via", choices=["stdin", "arg"], help="Claude prompt 传递方式")
+    parser.add_argument("--claude-extra-arg", action="append", help="额外 Claude CLI 参数，可重复")
+    parser.add_argument("--verbose", action="store_true", help="输出详细运行日志到 stderr")
+    parser.add_argument("--quiet", action="store_true", help="抑制进度日志，stdout 保持机器可读 JSON")
+    parser.add_argument("--log-file", help="写入 JSONL 运行日志")
+    parser.add_argument("--no-debug-bundle", action="store_true", help="关闭默认 debug bundle")
+    parser.add_argument("--debug-bundle-dir", help="debug bundle 输出目录")
+    parser.add_argument("--debug-include-code", action="store_true", help="debug bundle 保存代码上下文快照")
     parser.add_argument("--incremental", action="store_true", help="增量分析")
     parser.add_argument("--last-commit", default=os.environ.get("LAST_COMMIT"), help="增量分析起始 commit")
     parser.add_argument("--output-root", default="docs", help="PRD/ISSUE 文档输出根目录")
     args = parser.parse_args()
+
+    runtime_config = build_runtime_config(args)
+    logger = RunLogger(verbose=runtime_config.verbose, quiet=runtime_config.quiet, log_file=runtime_config.log_file)
 
     client = ZentaoClient(
         config_path=args.config,
         profile=args.profile,
     )
 
-    # 自动判断是否需要登录
     needs_login = bool(
         args.login
         or (args.server and (args.user or args.password or args.token))
@@ -73,7 +88,7 @@ def main():
             print(f"[错误] 禅道登录失败: {e}")
             return 1
 
-    # 获取禅道数据
+    logger.info("fetch_items", "started", status="running", module=args.module, item_id=args.id or "")
     try:
         if args.id:
             items = [client.get_item(args.module, args.id)]
@@ -86,16 +101,17 @@ def main():
                 status=args.status,
                 limit=args.limit,
             )
+        logger.info("fetch_items", "done", status="done", count=len(items))
     except ZentaoError as e:
+        logger.error("fetch_items", "failed", status="failed", error=str(e))
         err_msg = str(e)
         if any(k in err_msg for k in ("Token 已失效", "token", "登录", "login", "认证", "auth")):
-            print(f"[错误] 获取禅道数据失败: {err_msg}")
-            print("[提示] 这可能是由于 token 失效或未登录。请尝试添加 --login 参数，或提供 --server + --user + --password 重新登录。")
+            print(f"[错误] 获取禅道数据失败: {err_msg}", file=sys.stderr)
+            print("[提示] 这可能是由于 token 失效或未登录。请尝试添加 --login 参数，或提供 --server + --user + --password 重新登录。", file=sys.stderr)
         else:
-            print(f"[错误] 获取禅道数据失败: {err_msg}")
+            print(f"[错误] 获取禅道数据失败: {err_msg}", file=sys.stderr)
         return 1
 
-    # 阶段一：基础数据输出
     base_result = {
         "module": args.module,
         "count": len(items),
@@ -128,26 +144,58 @@ def main():
             print(json.dumps(base_result, ensure_ascii=False, indent=2))
         return 0
 
-    # 阶段二：代码分析 + 阶段三：文档生成
     repo_path = args.repo_path
     incremental = args.incremental
     last_commit = args.last_commit if incremental else None
     output_root = args.output_root
 
+    run_id = args.id or args.project or args.product or "list"
+    debug_bundle = build_debug_bundle(
+        enabled=runtime_config.debug_bundle_enabled,
+        base_dir=runtime_config.debug_bundle_dir,
+        module=args.module,
+        run_id=run_id,
+        include_code=runtime_config.debug_include_code,
+    )
+    debug_bundle.write_config({
+        "args": vars(args),
+        "runtime_config": runtime_config.__dict__,
+        "environment": {
+            "LLM_AGENT": os.environ.get("LLM_AGENT", ""),
+            "OPENAI_MODEL": os.environ.get("OPENAI_MODEL", ""),
+            "OPENAI_API_KEY": os.environ.get("OPENAI_API_KEY", ""),
+            "CLAUDE_COMMAND": os.environ.get("CLAUDE_COMMAND", ""),
+            "CLAUDE_PROMPT_VIA": os.environ.get("CLAUDE_PROMPT_VIA", ""),
+            "ZENTAO_TOKEN": os.environ.get("ZENTAO_TOKEN", ""),
+        },
+    })
+    debug_bundle.write_items(items)
+
     modified_files = get_modified_files(repo_path, last_commit) if incremental else None
+    agent_config = AgentConfig(**runtime_config.agent_config_dict())
+
+    def record_debug(kind, item, payload):
+        if kind == "prompt":
+            debug_bundle.write_prompt(item.id, payload)
+        elif kind == "response":
+            debug_bundle.write_response(item.id, payload)
+
     analysis_results = []
     documents = []
     summary_items = []
     writeback = prepare_writeback_status()
 
     for item in items:
-        # 分析
+        logger.info("analyze", "started", status="running", item_id=item.id)
         result = analyze(
             item,
             repo_path=repo_path,
-            agent=args.agent,
+            agent=runtime_config.agent,
             modified_files=modified_files,
+            agent_config=agent_config,
+            debug_recorder=record_debug,
         )
+        logger.info("analyze", "done", status="done", item_id=item.id, confidence=result.confidence)
         analysis_results.append({
             "item_id": result.item_id,
             "item_type": result.item_type,
@@ -163,8 +211,9 @@ def main():
             "error": result.error,
         })
 
-        # 生成文档
+        logger.info("generate_docs", "started", status="running", item_id=item.id)
         doc = generate_document(item, result, output_root=output_root)
+        logger.info("generate_docs", "done", status="done", item_id=item.id, document_path=doc.document_path)
         documents.append({
             "item_id": doc.item_id,
             "document_type": doc.document_type,
@@ -172,17 +221,23 @@ def main():
             "is_diagnostic": doc.is_diagnostic,
         })
 
-        # 汇总项
         summary_items.append(build_summary_item(item, result, doc, writeback))
 
-    # 写入汇总报告
     summary_path = write_summary_report(summary_items, output_root=output_root)
+    logger.info("summary_report", "written", path=summary_path)
+
+    debug_bundle.write_analysis_results(analysis_results)
+    debug_bundle.write_documents(documents)
+    debug_bundle.write_summary_path(summary_path)
 
     combined_output = {
         **base_result,
         "analysis": analysis_results,
         "documents": documents,
         "summary_report": summary_path,
+        "debug_bundle": debug_bundle.path if debug_bundle.enabled and not debug_bundle.error else "",
+        "debug_bundle_error": debug_bundle.error,
+        "log_file": runtime_config.log_file,
     }
 
     if args.output:

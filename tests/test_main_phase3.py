@@ -52,6 +52,7 @@ class TestMainPhase3(unittest.TestCase):
                     with patch.object(sys, "argv", [
                         "main.py", "--module", "requirement", "--id", "5939",
                         "--analyze", "--repo-path", td, "--output-root", td,
+                        "--quiet",
                     ]):
                         with contextlib.redirect_stdout(io.StringIO()):
                             main.main()
@@ -88,6 +89,7 @@ class TestMainPhase3(unittest.TestCase):
             with patch.object(main.ZentaoClient, "get_item", return_value=mock_item):
                 with patch.object(sys, "argv", [
                     "main.py", "--module", "story", "--id", "1",
+                    "--quiet",
                 ]):
                     with contextlib.redirect_stdout(io.StringIO()):
                         main.main()
