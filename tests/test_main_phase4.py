@@ -97,6 +97,22 @@ class TestMainPhase4(unittest.TestCase):
             parsed = json.loads(stdout.getvalue())
             self.assertEqual(parsed["debug_bundle"], "")
 
+    def test_phase1_without_analyze_does_not_create_debug_bundle(self):
+        with tempfile.TemporaryDirectory() as td:
+            item = make_item()
+            argv = [
+                "main.py", "--module", "requirement", "--id", "5939",
+                "--quiet",
+            ]
+            with patch.object(main.ZentaoClient, "get_item", return_value=item):
+                with patch.object(sys, "argv", argv):
+                    stdout = io.StringIO()
+                    with contextlib.redirect_stdout(stdout):
+                        main.main()
+            parsed = json.loads(stdout.getvalue())
+            self.assertNotIn("debug_bundle", parsed)
+            self.assertFalse(os.path.exists(os.path.join(td, "debug_runs")))
+
     def test_log_file_writes_jsonl(self):
         with tempfile.TemporaryDirectory() as td:
             item = make_item()

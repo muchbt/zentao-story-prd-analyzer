@@ -53,6 +53,7 @@ class RunLogger:
         self.verbose = bool(verbose)
         self.quiet = bool(quiet)
         self._log_files: list = []
+        self._buffer: list = []
         if log_file:
             self.add_log_file(log_file)
 
@@ -66,6 +67,12 @@ class RunLogger:
             return
         if path not in self._log_files:
             self._log_files.append(path)
+            for line in self._buffer:
+                try:
+                    with open(path, "a", encoding="utf-8") as f:
+                        f.write(line)
+                except OSError:
+                    break
 
     def event(self, stage: str, event: str, level: str = "info", **fields: Any) -> Dict[str, Any]:
         payload = {
@@ -102,11 +109,13 @@ class RunLogger:
         print(f"{payload.get('stage')} {payload.get('event')} {payload.get('status', '')}".strip(), file=sys.stderr)
 
     def _write_jsonl(self, payload: Dict[str, Any]) -> None:
+        line = json.dumps(payload, ensure_ascii=False) + "\n"
+        self._buffer.append(line)
         failed = []
         for path in self._log_files:
             try:
                 with open(path, "a", encoding="utf-8") as f:
-                    f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+                    f.write(line)
             except OSError:
                 print(f"[warning] 日志写入失败，已停用: {path}", file=sys.stderr)
                 failed.append(path)
