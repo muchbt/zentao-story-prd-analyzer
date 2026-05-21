@@ -49,5 +49,26 @@ class TestAnalyzer(unittest.TestCase):
         self.assertTrue(result.is_insufficient_evidence())
         self.assertEqual(result.conclusion, "无法判断")
 
+    def test_analyzer_passes_agent_config_to_llm_client(self):
+        item = ZentaoItem(id="6", type="story", title="S")
+        agent_config = MagicMock()
+        with patch("analyzer.collect", return_value=[{"path": "a.c", "content": "x", "line_start": 1, "line_end": 1}]):
+            with patch("analyzer.call_llm", return_value={"conclusion": "完成", "evidence": ["a.c"], "confidence": "高"}) as mock_llm:
+                analyze(item, ".", agent="claude", agent_config=agent_config)
+        self.assertEqual(mock_llm.call_args.kwargs["agent_config"], agent_config)
+
+    def test_analyzer_records_prompt_and_response_with_debug_recorder(self):
+        item = ZentaoItem(id="7", type="story", title="S")
+        records = []
+        def recorder(kind, item_obj, payload):
+            records.append((kind, item_obj.id, payload))
+        with patch("analyzer.collect", return_value=[{"path": "a.c", "content": "x", "line_start": 1, "line_end": 1}]):
+            with patch("analyzer.call_llm", return_value={"conclusion": "完成", "evidence": ["a.c"], "confidence": "高", "raw": '{"ok":true}'}):
+                analyze(item, ".", agent="codex", debug_recorder=recorder)
+        self.assertEqual(records[0][0], "prompt")
+        self.assertEqual(records[0][1], "7")
+        self.assertIn("功能实现完成度", records[0][2])
+        self.assertEqual(records[1], ("response", "7", '{"ok":true}'))
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

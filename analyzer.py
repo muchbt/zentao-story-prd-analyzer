@@ -15,6 +15,8 @@ def analyze(
     max_files: int = 50,
     max_lines_per_file: int = 200,
     max_total_tokens: int = 8000,
+    agent_config: Any = None,
+    debug_recorder: Any = None,
 ) -> AnalysisResult:
     """
     完整分析流程：收集代码 -> 选择模板 -> 调用 LLM -> 解析结果 -> 证据不足检查。
@@ -36,7 +38,13 @@ def analyze(
     else:
         prompt = build_defect_prompt(item, code_snippets)
 
-    llm_data = call_llm(prompt, agent=agent)
+    if debug_recorder:
+        debug_recorder("prompt", item, prompt)
+
+    llm_data = call_llm(prompt, agent=agent, agent_config=agent_config)
+
+    if debug_recorder:
+        debug_recorder("response", item, llm_data.get("raw", ""))
 
     if "error" in llm_data:
         return AnalysisResult.from_error(item, llm_data["error"], raw_response=llm_data.get("raw", ""))

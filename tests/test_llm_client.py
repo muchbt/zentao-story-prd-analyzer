@@ -1,49 +1,40 @@
 import os
 import sys
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from agent_client import AgentConfig, AgentResult
 from llm_client import call_llm
 
+
 class TestLLMClient(unittest.TestCase):
-    @patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"})
-    def test_codex_returns_json(self):
-        mock_response = MagicMock()
-        mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.content = '{"conclusion":"完成"}'
-
-        with patch("llm_client.openai") as mock_openai:
-            mock_openai.ChatCompletion.create.return_value = mock_response
-            result = call_llm("test prompt", agent="codex")
+    def test_call_llm_returns_json_data_and_raw(self):
+        result_obj = AgentResult(ok=True, json_data={"conclusion": "完成"}, raw_response='{"conclusion":"完成"}')
+        with patch("llm_client.AgentClient") as mock_client:
+            mock_client.return_value.call.return_value = result_obj
+            result = call_llm("prompt", agent="codex", agent_config=AgentConfig(agent="codex", model="gpt-test"))
         self.assertEqual(result["conclusion"], "完成")
+        self.assertEqual(result["raw"], '{"conclusion":"完成"}')
 
-    def test_claude_placeholder(self):
-        result = call_llm("test", agent="claude")
-        self.assertIn("error", result)
-        self.assertIn("未实现", result["error"])
+    def test_call_llm_failure_returns_legacy_error_shape(self):
+        result_obj = AgentResult(ok=False, error="LLM 返回非 JSON", error_kind="parse", raw_response="bad")
+        with patch("llm_client.AgentClient") as mock_client:
+            mock_client.return_value.call.return_value = result_obj
+            result = call_llm("prompt", agent="claude", agent_config=AgentConfig(agent="claude"))
+        self.assertEqual(result["error"], "LLM 返回非 JSON")
+        self.assertEqual(result["error_kind"], "parse")
+        self.assertEqual(result["raw"], "bad")
 
-    def test_opencode_placeholder(self):
-        result = call_llm("test", agent="opencode")
-        self.assertIn("error", result)
-        self.assertIn("未实现", result["error"])
+    def test_call_llm_builds_config_from_agent_name(self):
+        with patch("llm_client.AgentClient") as mock_client:
+            mock_client.return_value.call.return_value = AgentResult(ok=False, error="OpenCode 适配尚未实现", error_kind="not_implemented")
+            result = call_llm("prompt", agent="opencode")
+        created_config = mock_client.call_args[0][0]
+        self.assertEqual(created_config.agent, "opencode")
+        self.assertEqual(result["error_kind"], "not_implemented")
 
-    def test_unknown_agent(self):
-        result = call_llm("test", agent="unknown")
-        self.assertIn("error", result)
-        self.assertIn("未识别", result["error"])
-
-    def test_non_json_response(self):
-        mock_response = MagicMock()
-        mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.content = "not json"
-
-        with patch("llm_client.openai") as mock_openai:
-            mock_openai.ChatCompletion.create.return_value = mock_response
-            result = call_llm("test", agent="codex")
-        self.assertIn("error", result)
-        self.assertEqual(result["raw"], "not json")
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
