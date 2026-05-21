@@ -118,6 +118,28 @@ class TestMainPhase4(unittest.TestCase):
             self.assertTrue(any(line["stage"] == "fetch_items" for line in lines))
             self.assertTrue(any(line["stage"] == "generate_docs" for line in lines))
 
+    def test_debug_bundle_writes_scan_summary_and_optional_code_context(self):
+        with tempfile.TemporaryDirectory() as td:
+            item = make_item()
+            analysis = make_analysis()
+            debug_dir = os.path.join(td, "debug")
+            argv = [
+                "main.py", "--module", "requirement", "--id", "5939",
+                "--analyze", "--repo-path", td, "--output-root", td,
+                "--debug-bundle-dir", debug_dir,
+                "--debug-include-code",
+                "--quiet",
+            ]
+            with patch.object(main.ZentaoClient, "get_item", return_value=item):
+                with patch("main.analyze", return_value=analysis):
+                    with patch.object(sys, "argv", argv):
+                        stdout = io.StringIO()
+                        with contextlib.redirect_stdout(stdout):
+                            main.main()
+            parsed = json.loads(stdout.getvalue())
+            self.assertTrue(os.path.exists(os.path.join(parsed["debug_bundle"], "scan_summary.json")))
+            self.assertTrue(os.path.exists(os.path.join(parsed["debug_bundle"], "code_context.json")))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

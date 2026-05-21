@@ -172,6 +172,24 @@ def main():
     debug_bundle.write_items(items)
 
     modified_files = get_modified_files(repo_path, last_commit) if incremental else None
+
+    scan_summary = {
+        "repo_path": repo_path,
+        "incremental": incremental,
+        "last_commit": last_commit or "",
+        "modified_files": modified_files or [],
+        "modified_file_count": len(modified_files or []),
+        "max_files": 50,
+        "max_lines_per_file": 200,
+        "max_total_tokens": 8000,
+    }
+    debug_bundle.write_scan_summary(scan_summary)
+    debug_bundle.write_code_context({
+        "repo_path": repo_path,
+        "items": [{"id": item.id, "keywords": item.keywords} for item in items],
+        "modified_files": modified_files or [],
+    })
+
     agent_config = AgentConfig(**runtime_config.agent_config_dict())
 
     def record_debug(kind, item, payload):
