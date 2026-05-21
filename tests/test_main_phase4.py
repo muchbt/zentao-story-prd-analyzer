@@ -140,6 +140,29 @@ class TestMainPhase4(unittest.TestCase):
             self.assertTrue(os.path.exists(os.path.join(parsed["debug_bundle"], "scan_summary.json")))
             self.assertTrue(os.path.exists(os.path.join(parsed["debug_bundle"], "code_context.json")))
 
+    def test_debug_bundle_contains_run_log_jsonl(self):
+        with tempfile.TemporaryDirectory() as td:
+            item = make_item()
+            analysis = make_analysis()
+            argv = [
+                "main.py", "--module", "requirement", "--id", "5939",
+                "--analyze", "--repo-path", td, "--output-root", td,
+                "--debug-bundle-dir", os.path.join(td, "debug"),
+                "--quiet",
+            ]
+            with patch.object(main.ZentaoClient, "get_item", return_value=item):
+                with patch("main.analyze", return_value=analysis):
+                    with patch.object(sys, "argv", argv):
+                        stdout = io.StringIO()
+                        with contextlib.redirect_stdout(stdout):
+                            main.main()
+            parsed = json.loads(stdout.getvalue())
+            run_log = os.path.join(parsed["debug_bundle"], "run_log.jsonl")
+            self.assertTrue(os.path.exists(run_log))
+            with open(run_log, encoding="utf-8") as f:
+                lines = [json.loads(line) for line in f if line.strip()]
+            self.assertTrue(any(line["stage"] == "fetch_items" for line in lines))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

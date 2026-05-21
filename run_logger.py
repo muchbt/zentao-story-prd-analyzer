@@ -52,11 +52,20 @@ class RunLogger:
     def __init__(self, verbose: bool = False, quiet: bool = False, log_file: str = ""):
         self.verbose = bool(verbose)
         self.quiet = bool(quiet)
-        self.log_file = log_file or ""
-        if self.log_file:
-            parent = os.path.dirname(os.path.abspath(self.log_file))
+        self._log_files: list = []
+        if log_file:
+            self.add_log_file(log_file)
+
+    def add_log_file(self, path: str) -> None:
+        try:
+            parent = os.path.dirname(os.path.abspath(path))
             if parent:
                 os.makedirs(parent, exist_ok=True)
+        except OSError:
+            print(f"[warning] 无法创建日志目录: {path}", file=sys.stderr)
+            return
+        if path not in self._log_files:
+            self._log_files.append(path)
 
     def event(self, stage: str, event: str, level: str = "info", **fields: Any) -> Dict[str, Any]:
         payload = {
@@ -93,7 +102,13 @@ class RunLogger:
         print(f"{payload.get('stage')} {payload.get('event')} {payload.get('status', '')}".strip(), file=sys.stderr)
 
     def _write_jsonl(self, payload: Dict[str, Any]) -> None:
-        if not self.log_file:
-            return
-        with open(self.log_file, "a", encoding="utf-8") as f:
-            f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        failed = []
+        for path in self._log_files:
+            try:
+                with open(path, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+            except OSError:
+                print(f"[warning] 日志写入失败，已停用: {path}", file=sys.stderr)
+                failed.append(path)
+        for path in failed:
+            self._log_files.remove(path)

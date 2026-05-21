@@ -60,6 +60,21 @@ class TestRunLogger(unittest.TestCase):
             self.assertEqual(event["token"], "***")
             self.assertEqual(event["error"], "Authorization: Bearer ***")
 
+    def test_oserror_does_not_raise(self):
+        logger = RunLogger(log_file="/proc/zentao-run.jsonl")
+        logger.info("test", "event", status="ok")
+
+    def test_add_log_file(self):
+        with tempfile.TemporaryDirectory() as td:
+            path1 = os.path.join(td, "a.jsonl")
+            path2 = os.path.join(td, "b.jsonl")
+            logger = RunLogger(log_file=path1)
+            logger.add_log_file(path2)
+            logger.info("test", "event", status="ok")
+            for path in (path1, path2):
+                with open(path, "r", encoding="utf-8") as f:
+                    self.assertTrue(len(f.readline()) > 0)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

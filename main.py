@@ -64,6 +64,17 @@ def main():
     runtime_config = build_runtime_config(args)
     logger = RunLogger(verbose=runtime_config.verbose, quiet=runtime_config.quiet, log_file=runtime_config.log_file)
 
+    run_id = args.id or args.project or args.product or "list"
+    debug_bundle = build_debug_bundle(
+        enabled=runtime_config.debug_bundle_enabled,
+        base_dir=runtime_config.debug_bundle_dir,
+        module=args.module,
+        run_id=run_id,
+        include_code=runtime_config.debug_include_code,
+    )
+    if debug_bundle.enabled and debug_bundle.path:
+        logger.add_log_file(os.path.join(debug_bundle.path, "run_log.jsonl"))
+
     client = ZentaoClient(
         config_path=args.config,
         profile=args.profile,
@@ -149,14 +160,6 @@ def main():
     last_commit = args.last_commit if incremental else None
     output_root = args.output_root
 
-    run_id = args.id or args.project or args.product or "list"
-    debug_bundle = build_debug_bundle(
-        enabled=runtime_config.debug_bundle_enabled,
-        base_dir=runtime_config.debug_bundle_dir,
-        module=args.module,
-        run_id=run_id,
-        include_code=runtime_config.debug_include_code,
-    )
     debug_bundle.write_config({
         "args": vars(args),
         "runtime_config": runtime_config.__dict__,
