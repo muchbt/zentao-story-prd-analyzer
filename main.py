@@ -6,6 +6,9 @@ import sys
 
 from zentao_client import ZentaoClient, ZentaoError
 from analyzer import analyze
+from document_generator import generate_document
+from summary_report import build_summary_item, write_summary_report
+from writeback import prepare_writeback_status
 
 
 # ---------------------- 增量分析: 获取修改文件 ----------------------
@@ -42,6 +45,7 @@ def main():
     parser.add_argument("--agent", default=os.environ.get("LLM_AGENT","codex"), help="LLM Agent")
     parser.add_argument("--incremental", action="store_true", help="增量分析")
     parser.add_argument("--last-commit", default=os.environ.get("LAST_COMMIT"), help="增量分析起始 commit")
+    parser.add_argument("--output-root", default="docs", help="PRD/ISSUE 文档输出根目录")
     args = parser.parse_args()
 
     client = ZentaoClient(
@@ -124,14 +128,20 @@ def main():
             print(json.dumps(base_result, ensure_ascii=False, indent=2))
         return 0
 
-    # 阶段二：代码分析
+    # 阶段二：代码分析 + 阶段三：文档生成
     repo_path = args.repo_path
     incremental = args.incremental
     last_commit = args.last_commit if incremental else None
+    output_root = args.output_root
 
     modified_files = get_modified_files(repo_path, last_commit) if incremental else None
     analysis_results = []
+    documents = []
+    summary_items = []
+    writeback = prepare_writeback_status()
+
     for item in items:
+        # 分析
         result = analyze(
             item,
             repo_path=repo_path,
@@ -153,9 +163,26 @@ def main():
             "error": result.error,
         })
 
+        # 生成文档
+        doc = generate_document(item, result, output_root=output_root)
+        documents.append({
+            "item_id": doc.item_id,
+            "document_type": doc.document_type,
+            "document_path": doc.document_path,
+            "is_diagnostic": doc.is_diagnostic,
+        })
+
+        # 汇总项
+        summary_items.append(build_summary_item(item, result, doc, writeback))
+
+    # 写入汇总报告
+    summary_path = write_summary_report(summary_items, output_root=output_root)
+
     combined_output = {
         **base_result,
         "analysis": analysis_results,
+        "documents": documents,
+        "summary_report": summary_path,
     }
 
     if args.output:
