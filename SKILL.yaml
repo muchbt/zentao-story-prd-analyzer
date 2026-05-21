@@ -15,6 +15,47 @@ inputs:
   - name: repo_path
     description: 本地代码仓库路径
     type: string
+  - name: agent
+    description: Agent 类型（openai、codex、claude、opencode）
+    type: string
+    default: codex
+  - name: model
+    description: OpenAI/Codex 模型名
+    type: string
+  - name: agent_timeout
+    description: Agent 调用超时时间，单位秒
+    type: number
+    default: 120
+  - name: claude_command
+    description: Claude CLI 命令
+    type: string
+    default: claude
+  - name: claude_prompt_via
+    description: Claude prompt 传递方式（stdin 或 arg）
+    type: string
+    default: stdin
+  - name: verbose
+    description: 输出详细 stderr 日志
+    type: boolean
+    default: false
+  - name: quiet
+    description: 抑制进度日志，stdout 保持最终 JSON
+    type: boolean
+    default: false
+  - name: log_file
+    description: JSONL 运行日志路径
+    type: string
+  - name: debug_bundle_dir
+    description: Debug bundle 输出目录
+    type: string
+  - name: no_debug_bundle
+    description: 关闭默认 debug bundle
+    type: boolean
+    default: false
+  - name: debug_include_code
+    description: 在 debug bundle 中保存代码上下文快照
+    type: boolean
+    default: false
 outputs:
   - name: prd_docs
     description: 自动生成的 PRD 文档列表，包括 LLM 判断和优先级评分

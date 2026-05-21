@@ -84,3 +84,63 @@ python3 main.py --module story --project 3 --analyze --repo-path ./my-repo
 - 当对象不存在时，会提示 `禅道对象不存在`。
 - 当网络超时时，会提示超时信息。
 - 所有日志和异常信息均已对敏感字段做脱敏处理。
+
+---
+
+## 阶段四：Agent、日志与 Debug Bundle
+
+### Agent 选择
+
+```bash
+python3 main.py --module requirement --id 5939 --analyze --repo-path . --agent openai --model "$OPENAI_MODEL"
+python3 main.py --module requirement --id 5939 --analyze --repo-path . --agent codex --model "$OPENAI_MODEL"
+python3 main.py --module requirement --id 5939 --analyze --repo-path . --agent claude
+python3 main.py --module requirement --id 5939 --analyze --repo-path . --agent opencode
+```
+
+`openai` 和 `codex` 使用 OpenAI SDK 后端。需要设置：
+
+```bash
+export OPENAI_API_KEY="你的 OpenAI API Key"
+export OPENAI_MODEL="模型名"
+export OPENAI_BASE_URL="可选的兼容 OpenAI 接口地址"
+```
+
+`claude` 使用本机 Claude CLI。默认命令是 `claude`，默认通过 stdin 传入 prompt：
+
+```bash
+python3 main.py --module requirement --id 5939 --analyze --repo-path . --agent claude
+python3 main.py --module requirement --id 5939 --analyze --repo-path . --agent claude --claude-command claude --claude-prompt-via arg
+```
+
+`opencode` 是预留接口，当前返回 `not_implemented`，不会伪造成功。
+
+### 日志
+
+运行日志默认写入 stderr，stdout 保持最终 JSON：
+
+```bash
+python3 main.py --module requirement --id 5939 --analyze --quiet
+python3 main.py --module requirement --id 5939 --analyze --verbose
+python3 main.py --module requirement --id 5939 --analyze --log-file logs/run.jsonl
+```
+
+日志会脱敏 token、password、API key、Authorization 和 Bearer token。
+
+### Debug Bundle
+
+`--analyze` 时 debug bundle 默认开启，默认写入：
+
+```text
+debug_runs/{timestamp}-{module}-{id_or_project}/
+```
+
+其中包含脱敏配置、禅道条目摘要、扫描摘要、prompt、Agent response、分析结果、文档路径、summary 路径和本次 JSONL 日志引用。默认不保存完整代码片段。
+
+```bash
+python3 main.py --module requirement --id 5939 --analyze --debug-bundle-dir debug_runs
+python3 main.py --module requirement --id 5939 --analyze --no-debug-bundle
+python3 main.py --module requirement --id 5939 --analyze --debug-include-code
+```
+
+Debug bundle 会默认脱敏，但仍可能包含业务上下文、prompt 和模型响应，应按项目敏感资料管理。
