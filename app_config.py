@@ -1,0 +1,70 @@
+import dataclasses
+import os
+from typing import Any, Dict, List
+
+
+def _first_non_empty(*values: Any, default: Any = "") -> Any:
+    for value in values:
+        if value is not None and value != "":
+            return value
+    return default
+
+
+def _int_value(value: Any, default: int) -> int:
+    if value is None or value == "":
+        return default
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
+
+
+@dataclasses.dataclass
+class RuntimeConfig:
+    agent: str = "codex"
+    model: str = ""
+    agent_timeout: int = 120
+    claude_command: str = "claude"
+    claude_prompt_via: str = "stdin"
+    claude_extra_args: List[str] = dataclasses.field(default_factory=list)
+    verbose: bool = False
+    quiet: bool = False
+    log_file: str = ""
+    debug_bundle_enabled: bool = True
+    debug_bundle_dir: str = ""
+    debug_include_code: bool = False
+    repo_path: str = "."
+
+    def agent_config_dict(self) -> Dict[str, Any]:
+        return {
+            "agent": self.agent,
+            "model": self.model,
+            "timeout": self.agent_timeout,
+            "command": self.claude_command,
+            "prompt_via": self.claude_prompt_via,
+            "extra_args": list(self.claude_extra_args),
+            "cwd": self.repo_path or ".",
+        }
+
+
+def build_runtime_config(args) -> RuntimeConfig:
+    agent = str(_first_non_empty(getattr(args, "agent", None), os.environ.get("LLM_AGENT"), default="codex")).lower()
+    prompt_via = str(_first_non_empty(getattr(args, "claude_prompt_via", None), os.environ.get("CLAUDE_PROMPT_VIA"), default="stdin")).lower()
+    if prompt_via not in ("stdin", "arg"):
+        prompt_via = "stdin"
+    return RuntimeConfig(
+        agent=agent,
+        model=str(_first_non_empty(getattr(args, "model", None), os.environ.get("OPENAI_MODEL"), default="")),
+        agent_timeout=_int_value(_first_non_empty(getattr(args, "agent_timeout", None), os.environ.get("AGENT_TIMEOUT"), default=None), 120),
+        claude_command=str(_first_non_empty(getattr(args, "claude_command", None), os.environ.get("CLAUDE_COMMAND"), default="claude")),
+        claude_prompt_via=prompt_via,
+        claude_extra_args=list(getattr(args, "claude_extra_arg", None) or []),
+        verbose=bool(getattr(args, "verbose", False)),
+        quiet=bool(getattr(args, "quiet", False)),
+        log_file=str(_first_non_empty(getattr(args, "log_file", None), default="")),
+        debug_bundle_enabled=not bool(getattr(args, "no_debug_bundle", False)),
+        debug_bundle_dir=str(_first_non_empty(getattr(args, "debug_bundle_dir", None), os.environ.get("DEBUG_BUNDLE_DIR"), default="")),
+        debug_include_code=bool(getattr(args, "debug_include_code", False)),
+        repo_path=str(_first_non_empty(getattr(args, "repo_path", None), default=".")),
+    )
