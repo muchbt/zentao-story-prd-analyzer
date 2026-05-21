@@ -47,7 +47,8 @@ class TestSummaryReport(unittest.TestCase):
                 output_root=td,
                 generated_at="2026-05-21T10:00:00+08:00",
             )
-            data = json.load(open(path, encoding="utf-8"))
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
             self.assertEqual(data["count"], 1)
             self.assertEqual(data["prd_dir"], os.path.join(td, "prd"))
             self.assertEqual(data["issue_dir"], os.path.join(td, "issue"))

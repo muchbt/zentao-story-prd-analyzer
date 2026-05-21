@@ -1,3 +1,5 @@
+import contextlib
+import io
 import json
 import os
 import sys
@@ -51,7 +53,8 @@ class TestMainPhase3(unittest.TestCase):
                         "main.py", "--module", "requirement", "--id", "5939",
                         "--analyze", "--repo-path", td, "--output-root", td,
                     ]):
-                        main.main()
+                        with contextlib.redirect_stdout(io.StringIO()):
+                            main.main()
 
             # Check generated document exists
             prd_files = [f for f in os.listdir(os.path.join(td, "prd")) if f.endswith(".md")]
@@ -86,7 +89,8 @@ class TestMainPhase3(unittest.TestCase):
                 with patch.object(sys, "argv", [
                     "main.py", "--module", "story", "--id", "1",
                 ]):
-                    main.main()
+                    with contextlib.redirect_stdout(io.StringIO()):
+                        main.main()
 
             # No docs directory should be created
             self.assertFalse(os.path.exists(os.path.join(td, "prd")))

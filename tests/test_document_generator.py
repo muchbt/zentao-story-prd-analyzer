@@ -31,7 +31,8 @@ class TestDocumentGenerator(unittest.TestCase):
             self.assertEqual(doc.document_type, "PRD")
             self.assertEqual(doc.title, "新增 登录")
             self.assertIn(os.path.join("prd", "PRD-story-1-新增_登录.md"), doc.document_path)
-            content = open(doc.document_path, encoding="utf-8").read()
+            with open(doc.document_path, encoding="utf-8") as f:
+                content = f.read()
             self.assertIn("# PRD: 新增 登录", content)
             self.assertIn("## 来源信息", content)
             self.assertIn("条目类型: story", content)
@@ -60,7 +61,8 @@ class TestDocumentGenerator(unittest.TestCase):
             self.assertEqual(doc.document_type, "ISSUE")
             self.assertEqual(doc.title, "登录崩溃")
             self.assertIn(os.path.join("issue", "ISSUE-bug-2-登录崩溃.md"), doc.document_path)
-            content = open(doc.document_path, encoding="utf-8").read()
+            with open(doc.document_path, encoding="utf-8") as f:
+                content = f.read()
             self.assertIn("# ISSUE: 登录崩溃", content)
             self.assertIn("## 来源信息", content)
             self.assertIn("## 可能根因", content)
@@ -76,7 +78,8 @@ class TestDocumentGenerator(unittest.TestCase):
             self.assertTrue(doc.is_diagnostic)
             self.assertEqual(doc.document_type, "PRD")
             self.assertIn(os.path.join("prd", "PRD-requirement-3-T.md"), doc.document_path)
-            content = open(doc.document_path, encoding="utf-8").read()
+            with open(doc.document_path, encoding="utf-8") as f:
+                content = f.read()
             self.assertIn("# PRD: T", content)
             self.assertIn("> 诊断文档：当前条目未能生成完整 PRD。", content)
             self.assertIn("LLM 调用失败", content)
@@ -92,7 +95,8 @@ class TestDocumentGenerator(unittest.TestCase):
             self.assertTrue(doc.is_diagnostic)
             self.assertEqual(doc.document_type, "ISSUE")
             self.assertIn(os.path.join("issue", "ISSUE-bug-4-Bug.md"), doc.document_path)
-            content = open(doc.document_path, encoding="utf-8").read()
+            with open(doc.document_path, encoding="utf-8") as f:
+                content = f.read()
             self.assertIn("# ISSUE: Bug", content)
             self.assertIn("> 诊断文档：当前条目未能生成完整 ISSUE。", content)
 
@@ -113,7 +117,8 @@ class TestDocumentGenerator(unittest.TestCase):
             )
             doc = generate_document(item, analysis, output_root=td)
             self.assertEqual(doc.document_type, "ISSUE")
-            content = open(doc.document_path, encoding="utf-8").read()
+            with open(doc.document_path, encoding="utf-8") as f:
+                content = f.read()
             self.assertIn("未知条目类型 `custom_type`，按问题类文档生成", content)
 
     def test_sanitize_title(self):
