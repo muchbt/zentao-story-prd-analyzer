@@ -1,44 +1,12 @@
 import argparse
 import json
 import os
-import re
 import subprocess
 import sys
-from concurrent.futures import ThreadPoolExecutor
 
 from zentao_client import ZentaoClient, ZentaoError
+from analyzer import analyze
 
-
-# ---------------------- LLM 调用接口 ----------------------
-def call_llm(prompt, agent="codex"):
-    """统一调用不同 AGENT 接口"""
-    if agent.lower() == "codex":
-        import openai
-        openai.api_key = os.environ.get("OPENAI_API_KEY")
-        response = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0
-        )
-        text = response['choices'][0]['message']['content']
-    elif agent.lower() == "claude":
-        text = claude_api_call(prompt)  # placeholder
-    elif agent.lower() == "opencode":
-        text = opencode_api_call(prompt)  # placeholder
-    else:
-        text = '{"conclusion": "未知", "reason": "未识别 agent", "suggestion": "", "priority": "中", "prd_md": ""}'
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        return {"conclusion":"未知","reason":text,"suggestion":"","priority":"中","prd_md":""}
-
-# ---------------------- 获取禅道 story/bug ----------------------
-def get_zentao_items(client, project_id, item_type="story", status="open"):
-    return client.list_items(
-        module=item_type,
-        project=project_id,
-        status=status,
-    )
 
 # ---------------------- 增量分析: 获取修改文件 ----------------------
 def get_modified_files(repo_path, last_commit=None):
@@ -49,100 +17,6 @@ def get_modified_files(repo_path, last_commit=None):
     result = subprocess.run(cmd, shell=False, capture_output=True, text=True)
     return result.stdout.strip().split("\n")
 
-# ---------------------- 主动搜索代码库 ----------------------
-def collect_code(repo_path, keywords=None, max_files=50, max_lines_per_file=200):
-    """
-    主动搜索代码库，覆盖 C/C++/Python/Shell/Batch/Makefile/CMake 文件
-    可根据关键词优先收集相关文件
-    """
-    code_snippets = []
-    count = 0
-    exts = (".c",".cpp",".h",".hpp",".sh",".bat",".py")
-    build_files = ("Makefile","CMakeLists.txt")
-
-    for root, _, files in os.walk(repo_path):
-        for f in files:
-            try:
-                path = os.path.join(root,f)
-                if f.endswith(exts) or f in build_files:
-                    if keywords and not any(kw.lower() in f.lower() for kw in keywords):
-                        continue  # 跳过不相关文件
-                    with open(path, "r", encoding="utf-8", errors="ignore") as file:
-                        lines = file.readlines()[:max_lines_per_file]
-                        snippet = f"文件: {path}\n" + "".join(lines)
-                        code_snippets.append(snippet)
-                        count += 1
-                        if count >= max_files:
-                            return code_snippets
-            except:
-                continue
-    return code_snippets
-
-# ---------------------- 生成代码摘要 ----------------------
-def generate_code_summary(snippets):
-    summaries = []
-    for snippet in snippets:
-        lines = snippet.split("\n")
-        summary_lines = []
-        for line in lines:
-            if re.match(r"\s*(def|class|void|int|float|struct|#|//)", line):
-                summary_lines.append(line.strip())
-        summaries.append("\n".join(summary_lines))
-    return summaries
-
-# ---------------------- 生成高级 LLM Prompt ----------------------
-def generate_prompt(item, code_snippets, summaries):
-    code_text = "\n---\n".join(code_snippets)
-    summary_text = "\n---\n".join(summaries)
-    prompt = f"""
-你是高级代码分析 AGENT，需要为禅道 story 生成专业 PRD 文档。
-
-任务：
-1. 对比 story 描述与代码实现情况，判断是否完成
-2. 输出 JSON 格式：
-   - conclusion: 完成 / 未完成 / 部分完成
-   - reason: 详细分析理由
-   - suggestion: 智能修改建议
-   - priority: 优先级评分（高/中/低 + 1-10）
-   - prd_md: 可直接发布的 Markdown 文档
-
-Markdown 文档要求：
-1. 包含 Story ID, 标题, 描述
-2. 自动生成"实现差异分析表"，列出：
-   - 功能描述
-   - 实现状态
-   - 修改建议
-   - 相关文件/函数
-3. 对"未完成"或"部分完成"的功能使用 **粗体或 ⚠️** 高亮
-4. 给出优先级评分
-5. Markdown 样式清晰，包含目录、章节和代码片段引用
-
-输入：
-Story 信息:
-ID: {item['id']}
-标题: {item['title']}
-描述: {item.get('desc','')}
-
-代码摘要（函数/类/注释）:
-{summary_text}
-
-代码片段:
-{code_text}
-
-要求：
-- 严格返回 JSON
-- prd_md 为可直接发布的 Markdown 内容
-"""
-    return prompt
-
-# ---------------------- 创建 PRD 文件 ----------------------
-def create_prd_file(item, llm_result, output_dir="prd_docs"):
-    os.makedirs(output_dir, exist_ok=True)
-    safe_title = "".join(c if c.isalnum() else "_" for c in item['title'])
-    path = os.path.join(output_dir,f"{item['id']}_{safe_title}.md")
-    with open(path,"w",encoding="utf-8") as f:
-        f.write(llm_result.get("prd_md",""))
-    return path
 
 # ---------------------- 主流程 ----------------------
 def main():
@@ -217,8 +91,8 @@ def main():
             print(f"[错误] 获取禅道数据失败: {err_msg}")
         return 1
 
-    # 阶段一输出
-    result = {
+    # 阶段一：基础数据输出
+    base_result = {
         "module": args.module,
         "count": len(items),
         "items": [
@@ -241,50 +115,56 @@ def main():
         ],
     }
 
-    if args.output:
-        with open(args.output, "w", encoding="utf-8") as f:
-            json.dump(result, f, ensure_ascii=False, indent=2)
-        print(f"禅道数据已写入: {args.output}")
-    else:
-        print(json.dumps(result, ensure_ascii=False, indent=2))
-
     if not args.analyze:
+        if args.output:
+            with open(args.output, "w", encoding="utf-8") as f:
+                json.dump(base_result, f, ensure_ascii=False, indent=2)
+            print(f"禅道数据已写入: {args.output}", file=sys.stderr)
+        else:
+            print(json.dumps(base_result, ensure_ascii=False, indent=2))
         return 0
 
-    # 以下保持原有分析流程（阶段二/四）
+    # 阶段二：代码分析
     repo_path = args.repo_path
     incremental = args.incremental
     last_commit = args.last_commit if incremental else None
 
-    modified_files = get_modified_files(repo_path, last_commit)
+    modified_files = get_modified_files(repo_path, last_commit) if incremental else None
+    analysis_results = []
     for item in items:
-        keywords = item.keywords
-        code_snippets = collect_code(repo_path, keywords=keywords)
-        summaries = generate_code_summary(code_snippets)
-        prompt = generate_prompt({
-            "id": item.id,
-            "title": item.title,
-            "desc": item.description,
-        }, code_snippets, summaries)
-        llm_result = call_llm(prompt, args.agent)
-        prd_file = create_prd_file({
-            "id": item.id,
-            "title": item.title,
-        }, llm_result)
-        print(f"PRD 文档已生成: {prd_file}")
-
-    report_path = os.path.join("prd_docs", "summary_report.json")
-    summary = []
-    for item in items:
-        safe_title = "".join(c if c.isalnum() else "_" for c in item.title)
-        summary.append({
-            "id": item.id,
-            "title": item.title,
-            "prd_file": os.path.join("prd_docs", f"{item.id}_{safe_title}.md")
+        result = analyze(
+            item,
+            repo_path=repo_path,
+            agent=args.agent,
+            modified_files=modified_files,
+        )
+        analysis_results.append({
+            "item_id": result.item_id,
+            "item_type": result.item_type,
+            "conclusion": result.conclusion,
+            "evidence": result.evidence,
+            "gaps": result.gaps,
+            "suspected_causes": result.suspected_causes,
+            "affected_scope": result.affected_scope,
+            "recommendations": result.recommendations,
+            "verification": result.verification,
+            "priority": result.priority,
+            "confidence": result.confidence,
+            "error": result.error,
         })
-    with open(report_path, "w", encoding="utf-8") as f:
-        json.dump(summary, f, ensure_ascii=False, indent=2)
-    print(f"总结报告已生成: {report_path}")
+
+    combined_output = {
+        **base_result,
+        "analysis": analysis_results,
+    }
+
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as f:
+            json.dump(combined_output, f, ensure_ascii=False, indent=2)
+        print(f"分析结果已写入: {args.output}", file=sys.stderr)
+    else:
+        print(json.dumps(combined_output, ensure_ascii=False, indent=2))
+
     return 0
 
 if __name__ == "__main__":
