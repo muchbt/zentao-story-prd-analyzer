@@ -1,0 +1,26 @@
+name: zentao-story-prd-analyzer
+description: 从禅道获取 story/bug，AGENT 主动分析代码实现情况，对比 story 描述，生成智能修改建议、优先级评分，并生成 PRD 文档
+inputs:
+  - name: project_id
+    description: 禅道项目编号
+    type: string
+  - name: item_type
+    description: 类型（story 或 bug）
+    type: string
+    default: story
+  - name: status
+    description: 状态过滤
+    type: string
+    default: open
+  - name: repo_path
+    description: 本地代码仓库路径
+    type: string
+outputs:
+  - name: prd_docs
+    description: 自动生成的 PRD 文档列表，包括 LLM 判断和优先级评分
+run:
+  python: main.py
+agents:
+  - codex
+  - claude
+  - opencode
