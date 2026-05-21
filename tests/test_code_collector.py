@@ -52,5 +52,28 @@ class TestCodeCollector(unittest.TestCase):
         self.assertTrue(any("a.c" in p for p in paths))
         self.assertFalse(any("b.c" in p for p in paths))
 
+    def test_modified_files_relative_paths(self):
+        """Verify relative paths from git diff are resolved against repo_path"""
+        td = self._create_repo({
+            "src/a.c": "int alpha;\n",
+            "src/b.c": "int beta;\n",
+        })
+        # Pass relative paths (like git diff --name-only returns)
+        snippets = collect(td, keywords=["int"], modified_files=["src/a.c"])
+        paths = [s["path"] for s in snippets]
+        self.assertTrue(any("a.c" in p for p in paths))
+        self.assertFalse(any("b.c" in p for p in paths))
+
+    def test_os_walk_matches_filename(self):
+        """Verify keyword matching also works against filenames, not just content"""
+        td = self._create_repo({
+            "src/delta_v.c": "void func() {}\n",  # content does NOT contain "delta"
+            "src/other.c": "int main() {}\n",
+        })
+        snippets = collect(td, keywords=["delta"], max_files=10)
+        paths = [s["path"] for s in snippets]
+        self.assertTrue(any("delta_v.c" in p for p in paths))
+        self.assertFalse(any("other.c" in p for p in paths))
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

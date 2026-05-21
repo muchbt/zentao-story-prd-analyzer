@@ -65,6 +65,10 @@ def _os_walk_search(repo_path: str, keywords: List[str]) -> List[str]:
                 if not keywords:
                     matched.append(path)
                     continue
+                # Also match against filename / path
+                if any(kw.lower() in f.lower() or kw.lower() in path.lower() for kw in keywords):
+                    matched.append(path)
+                    continue
                 try:
                     with open(path, "r", encoding="utf-8", errors="ignore") as fh:
                         content = fh.read()
@@ -135,7 +139,14 @@ def collect(
     Returns: [{"path": str, "content": str, "line_start": int, "line_end": int}]
     """
     if modified_files:
-        candidates = [p for p in modified_files if os.path.exists(p)]
+        # Normalize relative paths to repo_path
+        normalized = []
+        for p in modified_files:
+            if not os.path.isabs(p):
+                p = os.path.join(repo_path, p)
+            if os.path.exists(p):
+                normalized.append(p)
+        candidates = normalized
     else:
         candidates = []
         if _find_executable("rg"):
