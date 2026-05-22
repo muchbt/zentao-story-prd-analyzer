@@ -6,9 +6,10 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from analysis_result import AnalysisResult
-from document_generator import generate_document, sanitize_title, DocumentResult
-from zentao_client import ZentaoItem
+from zentao_analyzer.analysis_result import AnalysisResult
+from zentao_analyzer.code_clues import CodeLocation
+from zentao_analyzer.document_generator import generate_document, sanitize_title, DocumentResult
+from zentao_analyzer.zentao_client import ZentaoItem
 
 
 class TestDocumentGenerator(unittest.TestCase):
@@ -38,6 +39,7 @@ class TestDocumentGenerator(unittest.TestCase):
             self.assertIn("条目类型: story", content)
             self.assertIn("## LLM 理解摘要", content)
             self.assertIn("部分完成", content)
+            self.assertIn("## 关键代码证据", content)
             self.assertIn("## 追踪信息", content)
             self.assertIn("回写禅道: not_implemented", content)
 
@@ -66,8 +68,28 @@ class TestDocumentGenerator(unittest.TestCase):
             self.assertIn("# ISSUE: 登录崩溃", content)
             self.assertIn("## 来源信息", content)
             self.assertIn("## 可能根因", content)
+            self.assertIn("## 关键代码证据", content)
             self.assertIn("## 追踪信息", content)
             self.assertIn("回写禅道: not_implemented", content)
+
+    def test_document_renders_cited_evidence_locations_table(self):
+        with tempfile.TemporaryDirectory() as td:
+            item = ZentaoItem(id="6", type="story", title="证据")
+            analysis = AnalysisResult(
+                item_id="6",
+                item_type="story",
+                item_title="证据",
+                conclusion="完成",
+                evidence=["src/a.c:12-40 Login 支持结论"],
+                confidence="高",
+                cited_evidence_locations=[
+                    CodeLocation(path="src/a.c", line_start=12, line_end=40, symbol="Login", reason="支持结论", source="agent")
+                ],
+            )
+            doc = generate_document(item, analysis, output_root=td)
+            with open(doc.document_path, encoding="utf-8") as f:
+                content = f.read()
+            self.assertIn("| src/a.c | 12-40 | Login | 支持结论 |", content)
 
     def test_diagnostic_document_still_in_prd(self):
         """诊断文档仍使用 PRD 目录和文件名，document_type 仍为 PRD"""

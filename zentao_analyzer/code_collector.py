@@ -3,6 +3,12 @@ import subprocess
 import sys
 from typing import Any, Dict, List, Optional
 
+from .code_clues import CodeClue, CodeLocation, CollectionResult, RejectedClue
+
+
+ALLOWED_EXTS = (".c", ".cpp", ".h", ".hpp", ".sh", ".bat", ".py")
+BUILD_FILES = {"Makefile", "CMakeLists.txt"}
+
 
 def _find_executable(name: str) -> bool:
     try:
@@ -56,11 +62,9 @@ def _git_grep_search(repo_path: str, keywords: List[str]) -> List[str]:
 
 def _os_walk_search(repo_path: str, keywords: List[str]) -> List[str]:
     matched = []
-    exts = (".c", ".cpp", ".h", ".hpp", ".sh", ".bat", ".py")
-    build_files = {"Makefile", "CMakeLists.txt"}
     for root, _, files in os.walk(repo_path):
         for f in files:
-            if f.endswith(exts) or f in build_files:
+            if _is_allowed_file(f):
                 path = os.path.join(root, f)
                 if not keywords:
                     matched.append(path)
@@ -79,10 +83,74 @@ def _os_walk_search(repo_path: str, keywords: List[str]) -> List[str]:
     return matched
 
 
+def _is_allowed_file(filename: str) -> bool:
+    return filename.endswith(ALLOWED_EXTS) or filename in BUILD_FILES
+
+
+def _iter_allowed_files(path: str) -> List[str]:
+    if os.path.isfile(path):
+        return [path] if _is_allowed_file(os.path.basename(path)) else []
+    if not os.path.isdir(path):
+        return []
+    result = []
+    for root, _, files in os.walk(path):
+        for filename in files:
+            if _is_allowed_file(filename):
+                result.append(os.path.join(root, filename))
+    return result
+
+
+def _normalize_modified_files(repo_path: str, modified_files: Optional[List[str]]) -> Optional[set]:
+    if not modified_files:
+        return None
+    normalized = set()
+    for path in modified_files:
+        if not path:
+            continue
+        if not os.path.isabs(path):
+            path = os.path.join(repo_path, path)
+        normalized.add(os.path.abspath(path))
+    return normalized
+
+
+def _add_candidate(candidates: Dict[str, List[str]], path: str, clue_value: str, allowed_paths: Optional[set]) -> None:
+    abs_path = os.path.abspath(path)
+    if allowed_paths is not None and abs_path not in allowed_paths:
+        return
+    if not os.path.exists(abs_path):
+        return
+    candidates.setdefault(abs_path, [])
+    if clue_value and clue_value not in candidates[abs_path]:
+        candidates[abs_path].append(clue_value)
+
+
+def _search_files_by_text(repo_path: str, value: str, allowed_paths: Optional[set]) -> List[str]:
+    matched = []
+    lowered = value.lower()
+    for root, _, files in os.walk(repo_path):
+        for filename in files:
+            if not _is_allowed_file(filename):
+                continue
+            path = os.path.abspath(os.path.join(root, filename))
+            if allowed_paths is not None and path not in allowed_paths:
+                continue
+            if lowered in filename.lower() or lowered in path.lower():
+                matched.append(path)
+                continue
+            try:
+                with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                    if lowered in f.read().lower():
+                        matched.append(path)
+            except OSError:
+                continue
+    return matched
+
+
 def _read_snippets(
     paths: List[str],
     max_lines_per_file: int,
     max_total_tokens: int,
+    matched_clues: Optional[Dict[str, List[str]]] = None,
 ) -> List[Dict[str, Any]]:
     snippets = []
     token_budget = max_total_tokens
@@ -113,6 +181,7 @@ def _read_snippets(
                     "content": content,
                     "line_start": 1,
                     "line_end": len(content_lines),
+                    "matched_clues": (matched_clues or {}).get(os.path.abspath(path), []),
                 })
 
                 if token_budget <= 0:
@@ -124,6 +193,50 @@ def _read_snippets(
     if truncated and snippets:
         snippets[-1]["content"] += "\n[代码上下文已截断，仅展示部分相关文件]\n"
     return snippets
+
+
+def collect_with_clues(
+    repo_path: str,
+    clues: List[CodeClue],
+    modified_files: Optional[List[str]] = None,
+    max_files: int = 50,
+    max_lines_per_file: int = 200,
+    max_total_tokens: int = 8000,
+    rejected_clues: Optional[List[RejectedClue]] = None,
+) -> CollectionResult:
+    """Collect code context and location metadata from explicit code clues."""
+    allowed_paths = _normalize_modified_files(repo_path, modified_files)
+    candidates: Dict[str, List[str]] = {}
+    rejected = list(rejected_clues or [])
+
+    for clue in clues:
+        if clue.kind == "path":
+            for path in _iter_allowed_files(clue.value):
+                _add_candidate(candidates, path, clue.value, allowed_paths)
+
+    for clue in clues:
+        if clue.kind not in ("keyword", "symbol"):
+            continue
+        for path in _search_files_by_text(repo_path, clue.value, allowed_paths):
+            _add_candidate(candidates, path, clue.value, allowed_paths)
+
+    ordered_paths = list(candidates.keys())[:max_files]
+    snippets = _read_snippets(ordered_paths, max_lines_per_file, max_total_tokens, candidates)
+    collected_locations = [
+        CodeLocation(
+            path=snippet["path"],
+            line_start=snippet["line_start"],
+            line_end=snippet["line_end"],
+            source="collector",
+            matched_clues=snippet.get("matched_clues", []),
+        )
+        for snippet in snippets
+    ]
+    return CollectionResult(
+        snippets=snippets,
+        collected_locations=collected_locations,
+        rejected_clues=rejected,
+    )
 
 
 def collect(

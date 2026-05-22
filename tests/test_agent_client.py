@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from agent_client import AgentClient, AgentConfig, AgentResult, extract_json_object
+from zentao_analyzer.agent_client import AgentClient, AgentConfig, AgentResult, extract_json_object
 
 
 class TestAgentClientCore(unittest.TestCase):
@@ -33,7 +33,7 @@ class TestAgentClientCore(unittest.TestCase):
 class TestAgentClientOpenAI(unittest.TestCase):
     @patch.dict(os.environ, {}, clear=True)
     def test_openai_missing_key_returns_config_error(self):
-        with patch("agent_client.openai", MagicMock()):
+        with patch("zentao_analyzer.agent_client.openai", MagicMock()):
             client = AgentClient(AgentConfig(agent="openai", model="gpt-test"))
             result = client.call("prompt")
         self.assertFalse(result.ok)
@@ -42,7 +42,7 @@ class TestAgentClientOpenAI(unittest.TestCase):
 
     @patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test"}, clear=True)
     def test_openai_missing_model_returns_config_error(self):
-        with patch("agent_client.openai", MagicMock()):
+        with patch("zentao_analyzer.agent_client.openai", MagicMock()):
             client = AgentClient(AgentConfig(agent="openai"))
             result = client.call("prompt")
         self.assertFalse(result.ok)
@@ -54,7 +54,7 @@ class TestAgentClientOpenAI(unittest.TestCase):
         response = MagicMock()
         response.choices = [MagicMock()]
         response.choices[0].message.content = '{"conclusion":"完成","evidence":["src/a.py"],"confidence":"高"}'
-        with patch("agent_client.openai") as mock_openai:
+        with patch("zentao_analyzer.agent_client.openai") as mock_openai:
             mock_openai.ChatCompletion.create.return_value = response
             client = AgentClient(AgentConfig(agent="codex", model="gpt-test", timeout=8))
             result = client.call("prompt")
@@ -69,7 +69,7 @@ class TestAgentClientOpenAI(unittest.TestCase):
         response = MagicMock()
         response.choices = [MagicMock()]
         response.choices[0].message.content = "not json"
-        with patch("agent_client.openai") as mock_openai:
+        with patch("zentao_analyzer.agent_client.openai") as mock_openai:
             mock_openai.ChatCompletion.create.return_value = response
             client = AgentClient(AgentConfig(agent="openai", model="gpt-test"))
             result = client.call("prompt")
@@ -89,7 +89,7 @@ def _subprocess_completed(stdout="", stderr="", returncode=0):
 class TestAgentClientClaude(unittest.TestCase):
     def test_claude_stdin_success(self):
         completed = _subprocess_completed(stdout='{"conclusion":"完成"}', stderr="", returncode=0)
-        with patch("agent_client.subprocess.run", return_value=completed) as mock_run:
+        with patch("zentao_analyzer.agent_client.subprocess.run", return_value=completed) as mock_run:
             client = AgentClient(AgentConfig(agent="claude", command="claude", prompt_via="stdin", timeout=5, cwd="/repo"))
             result = client.call("prompt")
         self.assertTrue(result.ok)
@@ -106,7 +106,7 @@ class TestAgentClientClaude(unittest.TestCase):
 
     def test_claude_arg_success(self):
         completed = _subprocess_completed(stdout='{"conclusion":"完成"}', stderr="", returncode=0)
-        with patch("agent_client.subprocess.run", return_value=completed) as mock_run:
+        with patch("zentao_analyzer.agent_client.subprocess.run", return_value=completed) as mock_run:
             client = AgentClient(AgentConfig(agent="claude", command="claude", prompt_via="arg", extra_args=["--foo"], timeout=5))
             result = client.call("prompt")
         self.assertTrue(result.ok)
@@ -117,20 +117,20 @@ class TestAgentClientClaude(unittest.TestCase):
         self.assertIsNone(mock_run.call_args.kwargs.get("input"))
 
     def test_claude_timeout(self):
-        with patch("agent_client.subprocess.run", side_effect=TimeoutError("expired")):
+        with patch("zentao_analyzer.agent_client.subprocess.run", side_effect=TimeoutError("expired")):
             result = AgentClient(AgentConfig(agent="claude", command="claude")).call("prompt")
         self.assertFalse(result.ok)
         self.assertEqual(result.error_kind, "timeout")
 
     def test_claude_missing_command(self):
-        with patch("agent_client.subprocess.run", side_effect=FileNotFoundError("missing")):
+        with patch("zentao_analyzer.agent_client.subprocess.run", side_effect=FileNotFoundError("missing")):
             result = AgentClient(AgentConfig(agent="claude", command="missing")).call("prompt")
         self.assertFalse(result.ok)
         self.assertEqual(result.error_kind, "config")
 
     def test_claude_auth_error_is_classified(self):
         completed = _subprocess_completed(stdout="", stderr="unauthorized anthropic_api_key", returncode=1)
-        with patch("agent_client.subprocess.run", return_value=completed):
+        with patch("zentao_analyzer.agent_client.subprocess.run", return_value=completed):
             result = AgentClient(AgentConfig(agent="claude", command="claude")).call("prompt")
         self.assertFalse(result.ok)
         self.assertEqual(result.error_kind, "auth")

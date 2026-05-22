@@ -8,7 +8,7 @@ from contextlib import redirect_stderr
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from run_logger import RunLogger, redact_sensitive
+from zentao_analyzer.run_logger import RunLogger, redact_sensitive
 
 
 class TestRunLogger(unittest.TestCase):

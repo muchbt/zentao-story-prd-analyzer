@@ -6,7 +6,7 @@ import subprocess
 import time
 from typing import Any, Dict, List, Optional
 
-from run_logger import redact_sensitive
+from .run_logger import redact_sensitive
 
 try:
     import openai

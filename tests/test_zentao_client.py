@@ -7,7 +7,7 @@ from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from zentao_client import (
+from zentao_analyzer.zentao_client import (
     ZentaoClient,
     ZentaoItem,
     ZentaoAuthError,

@@ -1,6 +1,6 @@
 from typing import Any, Dict, Optional
 
-from agent_client import AgentClient, AgentConfig
+from .agent_client import AgentClient, AgentConfig
 
 
 def call_llm(prompt: str, agent: str = "codex", agent_config: Optional[AgentConfig] = None) -> Dict[str, Any]:

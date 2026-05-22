@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app_config import RuntimeConfig, build_runtime_config
+from zentao_analyzer.app_config import RuntimeConfig, build_runtime_config
 
 
 class TestAppConfig(unittest.TestCase):

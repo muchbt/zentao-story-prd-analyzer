@@ -5,8 +5,8 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from analysis_result import AnalysisResult
-from zentao_client import ZentaoItem
+from zentao_analyzer.analysis_result import AnalysisResult
+from zentao_analyzer.zentao_client import ZentaoItem
 
 class TestAnalysisResult(unittest.TestCase):
     def test_from_llm_json_full(self):
@@ -28,7 +28,53 @@ class TestAnalysisResult(unittest.TestCase):
         self.assertEqual(result.conclusion, "完成")
         self.assertEqual(result.confidence, "高")
         self.assertEqual(result.evidence, ["file.c:foo()"])
+        self.assertEqual(result.evidence_text, ["file.c:foo()"])
         self.assertEqual(result.raw_response, "raw")
+
+    def test_from_llm_json_structured_evidence(self):
+        item = ZentaoItem(id="6", type="story", title="T")
+        data = {
+            "conclusion": "完成",
+            "confidence": "高",
+            "evidence": [
+                {
+                    "path": "src/a.c",
+                    "line_start": 12,
+                    "line_end": 40,
+                    "symbol": "Login",
+                    "reason": "实现了登录",
+                }
+            ],
+        }
+        result = AnalysisResult.from_llm_json(item, data)
+        self.assertEqual(result.evidence, ["src/a.c:12-40 Login 实现了登录"])
+        self.assertEqual(result.evidence_text, ["src/a.c:12-40 Login 实现了登录"])
+        self.assertEqual(len(result.cited_evidence_locations), 1)
+        self.assertEqual(result.cited_evidence_locations[0].path, "src/a.c")
+        self.assertEqual(result.cited_evidence_locations[0].line_start, 12)
+        self.assertEqual(result.cited_evidence_locations[0].line_end, 40)
+
+    def test_string_evidence_fallback_extracts_location_when_possible(self):
+        item = ZentaoItem(id="7", type="bug", title="B")
+        result = AnalysisResult.from_llm_json(item, {
+            "conclusion": "已定位",
+            "confidence": "中",
+            "evidence": ["src/a.c:12-18 Login 出错"],
+        })
+        self.assertEqual(len(result.cited_evidence_locations), 1)
+        self.assertEqual(result.cited_evidence_locations[0].path, "src/a.c")
+        self.assertEqual(result.cited_evidence_locations[0].line_start, 12)
+        self.assertEqual(result.cited_evidence_locations[0].line_end, 18)
+
+    def test_string_evidence_without_line_does_not_fabricate_location(self):
+        item = ZentaoItem(id="8", type="bug", title="B")
+        result = AnalysisResult.from_llm_json(item, {
+            "conclusion": "已定位",
+            "confidence": "中",
+            "evidence": ["src/a.c Login 出错"],
+        })
+        self.assertEqual(result.evidence, ["src/a.c Login 出错"])
+        self.assertEqual(result.cited_evidence_locations, [])
 
     def test_from_llm_json_missing_fields(self):
         item = ZentaoItem(id="2", type="bug", title="B")

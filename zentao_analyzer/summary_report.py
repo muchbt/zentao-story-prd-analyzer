@@ -3,9 +3,9 @@ import os
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
-from zentao_client import ZentaoItem
-from analysis_result import AnalysisResult
-from document_generator import DocumentResult
+from .zentao_client import ZentaoItem
+from .analysis_result import AnalysisResult
+from .document_generator import DocumentResult
 
 
 def build_summary_item(
@@ -13,6 +13,9 @@ def build_summary_item(
     analysis: AnalysisResult,
     document: DocumentResult,
     writeback: Dict[str, Any],
+    collected_location_count: int = 0,
+    rejected_clue_count: int = 0,
+    debug_bundle: str = "",
 ) -> Dict[str, Any]:
     """为单个条目构建汇总数据结构，排除敏感信息"""
     return {
@@ -30,6 +33,10 @@ def build_summary_item(
         "error": analysis.error or document.error,
         "insufficient_evidence": analysis.is_insufficient_evidence(),
         "evidence_count": len(analysis.evidence),
+        "collected_location_count": collected_location_count,
+        "cited_evidence_location_count": len(getattr(analysis, "cited_evidence_locations", []) or []),
+        "rejected_clue_count": rejected_clue_count,
+        "debug_bundle": debug_bundle,
         "recommendation_count": len(analysis.recommendations),
         "verification_count": len(analysis.verification),
         "writeback": writeback,

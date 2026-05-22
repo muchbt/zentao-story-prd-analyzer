@@ -3,8 +3,8 @@ import os
 import re
 from typing import Optional
 
-from zentao_client import ZentaoItem
-from analysis_result import AnalysisResult
+from .zentao_client import ZentaoItem
+from .analysis_result import AnalysisResult
 
 
 @dataclasses.dataclass
@@ -87,6 +87,24 @@ def _track_section(document_path: str, writeback_status: str) -> str:
 """
 
 
+def _render_key_evidence_table(analysis: AnalysisResult) -> str:
+    locations = getattr(analysis, "cited_evidence_locations", []) or []
+    if not locations:
+        return "无可定位代码证据"
+    rows = ["| 文件 | 行号 | 符号 | 说明 |", "|---|---:|---|---|"]
+    for location in locations:
+        line_range = f"{location.line_start}-{location.line_end}"
+        rows.append(
+            "| {path} | {line_range} | {symbol} | {reason} |".format(
+                path=location.path,
+                line_range=line_range,
+                symbol=location.symbol or "",
+                reason=location.reason or "",
+            )
+        )
+    return "\n".join(rows)
+
+
 def _source_info(item: ZentaoItem, generated_at: str) -> str:
     return f"""## 来源信息
 
@@ -129,6 +147,10 @@ def _render_prd(item: ZentaoItem, analysis: AnalysisResult, generated_at: str, d
 ## 实现证据
 
 {evidence}
+
+## 关键代码证据
+
+{_render_key_evidence_table(analysis)}
 
 ## 差异与缺口
 
@@ -183,6 +205,10 @@ def _render_issue(item: ZentaoItem, analysis: AnalysisResult, generated_at: str,
 ## 代码证据
 
 {evidence}
+
+## 关键代码证据
+
+{_render_key_evidence_table(analysis)}
 
 ## 可能根因
 

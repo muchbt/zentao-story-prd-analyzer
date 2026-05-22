@@ -9,7 +9,7 @@ from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import main
+import zentao_analyzer.main as main
 
 class TestMainPhase3(unittest.TestCase):
     def test_analyze_generates_document_and_summary(self):
@@ -48,9 +48,9 @@ class TestMainPhase3(unittest.TestCase):
             mock_analysis.raw_response = "secret"
 
             with patch.object(main.ZentaoClient, "get_item", return_value=mock_item):
-                with patch("main.analyze", return_value=mock_analysis):
+                with patch("zentao_analyzer.main.analyze", return_value=mock_analysis):
                     with patch.object(sys, "argv", [
-                        "main.py", "--module", "requirement", "--id", "5939",
+                        "zentao_analyzer.main.py", "--module", "requirement", "--id", "5939",
                         "--analyze", "--repo-path", td, "--output-root", td,
                         "--quiet",
                     ]):
@@ -88,7 +88,7 @@ class TestMainPhase3(unittest.TestCase):
 
             with patch.object(main.ZentaoClient, "get_item", return_value=mock_item):
                 with patch.object(sys, "argv", [
-                    "main.py", "--module", "story", "--id", "1",
+                    "zentao_analyzer.main.py", "--module", "story", "--id", "1",
                     "--quiet",
                 ]):
                     with contextlib.redirect_stdout(io.StringIO()):

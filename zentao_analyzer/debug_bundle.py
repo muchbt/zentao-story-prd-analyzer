@@ -5,7 +5,7 @@ import os
 import re
 from typing import Any, Dict, Iterable, List
 
-from run_logger import redact_sensitive
+from .run_logger import redact_sensitive
 
 
 def _safe_part(value: str) -> str:
@@ -23,6 +23,18 @@ def _item_to_dict(item: Any) -> Dict[str, Any]:
         "priority": getattr(item, "priority", ""),
         "keywords": getattr(item, "keywords", []),
     }
+
+
+def _to_plain(value: Any) -> Any:
+    if dataclasses.is_dataclass(value):
+        return dataclasses.asdict(value)
+    if isinstance(value, dict):
+        return {key: _to_plain(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_to_plain(item) for item in value]
+    if isinstance(value, tuple):
+        return [_to_plain(item) for item in value]
+    return value
 
 
 @dataclasses.dataclass
@@ -49,7 +61,7 @@ class DebugBundle:
             path = os.path.join(self.path, relative_path)
             os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(path, "w", encoding="utf-8") as f:
-                json.dump(redact_sensitive(data), f, ensure_ascii=False, indent=2)
+                json.dump(redact_sensitive(_to_plain(data)), f, ensure_ascii=False, indent=2)
         except OSError as exc:
             self.error = str(exc)
 
@@ -92,6 +104,12 @@ class DebugBundle:
         if not self.include_code:
             return
         self._write_json("code_context.json", context)
+
+    def write_code_evidence_locations(self, items: List[Dict[str, Any]]) -> None:
+        self._write_json("code_evidence_locations.json", {"items": items})
+
+    def write_rejected_clues(self, rejected_clues: List[Any]) -> None:
+        self._write_json("rejected_clues.json", rejected_clues)
 
 
 def build_debug_bundle(enabled: bool, base_dir: str = "", module: str = "", run_id: str = "", timestamp: str = "", include_code: bool = False) -> DebugBundle:

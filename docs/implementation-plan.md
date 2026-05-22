@@ -8,7 +8,7 @@
 
 - 禅道命令行工具应统一使用 `zentao`。
 - 默认配置文件位于 `~/.config/zentao/zentao.json`，也可通过 `--config` 或 `ZENTAO_CONFIG_FILE` 指定。
-- 当前只初步支持 story 分析，尚未完整覆盖 requirement、bug、issue 类条目。
+- 当前只初步支持 story 分析，尚未完整覆盖 requirement、bug、ticket、feedback 等禅道条目。
 - Claude 和 OpenCode 调用仍是占位函数。
 - 日志、错误处理、参数校验、脱敏和用户交互仍不完整。
 
@@ -16,7 +16,7 @@
 
 ### 目标
 
-建立稳定的禅道数据获取能力，支持用户输入工程、story、requirement、bug 或其他条目 ID 后，自动获取对应内容，并提炼为待完成功能或待修复问题。
+建立稳定的禅道数据获取能力，支持用户输入工程、story、requirement、bug 或其他条目 ID 后，自动获取对应内容，并统一转换为结构化禅道条目。阶段一不判断完成度、根因或修复建议。
 
 ### 范围
 
@@ -31,7 +31,7 @@
   - `requirement`：用户需求。
   - `bug`：缺陷。
   - `task`：任务。
-  - `ticket` 或 `feedback`：可作为 issue 类输入的候选映射。
+  - `ticket` 或 `feedback`：缺陷类或反馈类输入。
 - 将禅道返回内容统一转换为内部结构化对象。
 
 ### 交付物
@@ -187,14 +187,54 @@ ISSUE 文档应包含：
 - 日志不会输出密码、token、API key 等敏感信息。
 - 支持在 CI 或脚本中读取最终生成路径和汇总结果。
 
+## 阶段五：证据可追溯性增强
+
+### 目标
+
+在阶段一到阶段四已形成可运行闭环后，增强代码线索输入、证据位置记录和 debug bundle 审计能力，让用户可以复核 Agent 到底看过哪些代码、引用了哪些代码作为结论依据。
+
+### 范围
+
+- 支持用户显式提供代码线索：
+  - `--keywords`
+  - `--paths`
+  - `--symbols`
+  - `--clues-file`
+- 支持全局线索和按禅道条目 ID 的专属线索。
+- 路径线索必须限制在 `repo_path` 内，越界线索记录为 rejected clue，不读取内容。
+- 代码收集器默认记录 collected locations，即实际喂给 Agent 的文件名和行号范围。
+- Prompt 和分析结果优先支持结构化 evidence，旧字符串 evidence 作为 fallback。
+- debug bundle 默认保存 collected locations 与 cited evidence locations，不默认保存完整代码内容。
+- PRD/ISSUE 文档只展示关键引用证据。
+- `summary_report.json` 增加 collected/cited/rejected 计数和 debug bundle 索引。
+
+### 交付物
+
+- 代码线索解析与合并模块。
+- 扩展后的代码收集结果结构。
+- 结构化 evidence 解析能力。
+- debug bundle 证据位置文件。
+- PRD/ISSUE 关键代码证据表格。
+- summary 证据计数字段。
+
+### 验收点
+
+- 用户可通过 CLI 或 clues file 提供代码线索。
+- 越界路径线索不会读取仓库外文件。
+- debug bundle 默认包含实际收集位置和 Agent 引用位置。
+- 不传 `--debug-include-code` 时不保存完整代码内容。
+- 旧 evidence 字符串仍可兼容。
+- 无可定位证据时结论和置信度按证据不足规则降级。
+
 ## 建议实施顺序
 
 1. 先完成阶段一，确保禅道数据获取可靠。
 2. 再完成阶段二，让分析结果有足够代码证据支撑。
 3. 接着完成阶段三，把结果稳定落盘为 PRD/ISSUE。
-4. 最后完成阶段四，扩展 Agent 生态并提升用户体验。
+4. 完成阶段四，扩展 Agent 生态并提升用户体验。
+5. 最后完成阶段五，增强证据可追溯性和批量分析线索输入。
 
-该顺序的原因是：禅道数据是输入源，代码分析依赖输入源，文档生成依赖分析结果，多 Agent 和用户体验依赖前三个阶段的稳定接口。
+该顺序的原因是：禅道数据是输入源，代码分析依赖输入源，文档生成依赖分析结果，多 Agent 和用户体验依赖前三个阶段的稳定接口；证据可追溯性增强建立在已有闭环之上，不重新定义前四阶段。
 
 ## 暂不纳入范围
 

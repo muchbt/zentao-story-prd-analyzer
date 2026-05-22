@@ -6,10 +6,10 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from analysis_result import AnalysisResult
-from document_generator import DocumentResult
-from summary_report import build_summary_item, write_summary_report
-from zentao_client import ZentaoItem
+from zentao_analyzer.analysis_result import AnalysisResult
+from zentao_analyzer.document_generator import DocumentResult
+from zentao_analyzer.summary_report import build_summary_item, write_summary_report
+from zentao_analyzer.zentao_client import ZentaoItem
 
 
 class TestSummaryReport(unittest.TestCase):
@@ -39,6 +39,39 @@ class TestSummaryReport(unittest.TestCase):
         self.assertEqual(data["error"], "")
         self.assertNotIn("raw_response", json.dumps(data, ensure_ascii=False))
         self.assertNotIn("secret raw", json.dumps(data, ensure_ascii=False))
+        self.assertEqual(data["collected_location_count"], 0)
+        self.assertEqual(data["cited_evidence_location_count"], 0)
+        self.assertEqual(data["rejected_clue_count"], 0)
+
+    def test_build_summary_item_with_evidence_counts(self):
+        from zentao_analyzer.code_clues import CodeLocation
+
+        item = ZentaoItem(id="2", type="bug", title="Bug")
+        analysis = AnalysisResult(
+            item_id="2",
+            item_type="bug",
+            item_title="Bug",
+            conclusion="已定位",
+            evidence=["src/a.c:1-2 bug"],
+            confidence="高",
+            cited_evidence_locations=[
+                CodeLocation(path="src/a.c", line_start=1, line_end=2, source="agent")
+            ],
+        )
+        document = DocumentResult("2", "bug", "Bug", "ISSUE", "docs/issue/a.md", False)
+        data = build_summary_item(
+            item,
+            analysis,
+            document,
+            {"supported": False},
+            collected_location_count=3,
+            rejected_clue_count=1,
+            debug_bundle="debug_runs/run",
+        )
+        self.assertEqual(data["collected_location_count"], 3)
+        self.assertEqual(data["cited_evidence_location_count"], 1)
+        self.assertEqual(data["rejected_clue_count"], 1)
+        self.assertEqual(data["debug_bundle"], "debug_runs/run")
 
     def test_write_summary_report(self):
         with tempfile.TemporaryDirectory() as td:

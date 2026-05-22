@@ -5,7 +5,8 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from code_collector import collect
+from zentao_analyzer.code_clues import CodeClue
+from zentao_analyzer.code_collector import collect, collect_with_clues
 
 class TestCodeCollector(unittest.TestCase):
     def _create_repo(self, files_content):
@@ -74,6 +75,47 @@ class TestCodeCollector(unittest.TestCase):
         paths = [s["path"] for s in snippets]
         self.assertTrue(any("delta_v.c" in p for p in paths))
         self.assertFalse(any("other.c" in p for p in paths))
+
+    def test_collect_with_path_clue_records_locations(self):
+        td = self._create_repo({
+            "src/auth.c": "int login(void) {\n  return 1;\n}\n",
+            "src/other.c": "int other;\n",
+        })
+        path = os.path.join(td, "src", "auth.c")
+        result = collect_with_clues(td, [CodeClue("path", path, "cli", "1")])
+        self.assertEqual(len(result.snippets), 1)
+        self.assertEqual(result.snippets[0]["matched_clues"], [path])
+        self.assertEqual(result.collected_locations[0].path, path)
+        self.assertEqual(result.collected_locations[0].line_start, 1)
+        self.assertEqual(result.collected_locations[0].line_end, 3)
+
+    def test_collect_with_symbol_and_keyword_clues(self):
+        td = self._create_repo({
+            "src/auth.c": "int LoginUser(void) {\n  return 1;\n}\n",
+            "src/config.c": "int config;\n",
+        })
+        result = collect_with_clues(td, [
+            CodeClue("symbol", "LoginUser", "cli", "1"),
+            CodeClue("keyword", "config", "zentao", "1"),
+        ])
+        paths = [s["path"] for s in result.snippets]
+        self.assertTrue(any("auth.c" in p for p in paths))
+        self.assertTrue(any("config.c" in p for p in paths))
+        self.assertGreaterEqual(len(result.collected_locations), 2)
+
+    def test_collect_with_modified_files_intersection(self):
+        td = self._create_repo({
+            "src/a.c": "int alpha;\n",
+            "src/b.c": "int beta;\n",
+        })
+        result = collect_with_clues(
+            td,
+            [CodeClue("keyword", "int", "cli", "1")],
+            modified_files=["src/a.c"],
+        )
+        paths = [s["path"] for s in result.snippets]
+        self.assertTrue(any("a.c" in p for p in paths))
+        self.assertFalse(any("b.c" in p for p in paths))
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

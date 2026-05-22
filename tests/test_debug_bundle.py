@@ -7,7 +7,8 @@ from unittest.mock import MagicMock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from debug_bundle import DebugBundle, build_debug_bundle
+from zentao_analyzer.debug_bundle import DebugBundle, build_debug_bundle
+from zentao_analyzer.code_clues import CodeLocation, RejectedClue
 
 
 class TestDebugBundle(unittest.TestCase):
@@ -69,6 +70,33 @@ class TestDebugBundle(unittest.TestCase):
             bundle = DebugBundle(enabled=True, path=os.path.join(td, "bundle2"), include_code=True)
             bundle.write_code_context({"snippets": [{"content": "password=abc"}]})
             self.assertTrue(os.path.exists(os.path.join(bundle.path, "code_context.json")))
+
+    def test_evidence_locations_and_rejected_clues_are_written_by_default(self):
+        with tempfile.TemporaryDirectory() as td:
+            bundle = DebugBundle(enabled=True, path=os.path.join(td, "bundle"), include_code=False)
+            bundle.write_code_evidence_locations([
+                {
+                    "item_id": "1",
+                    "collected_locations": [
+                        CodeLocation(path="src/a.c", line_start=1, line_end=10, source="collector", matched_clues=["login"])
+                    ],
+                    "cited_evidence_locations": [
+                        CodeLocation(path="src/a.c", line_start=2, line_end=4, symbol="Login", reason="支持结论", source="agent")
+                    ],
+                }
+            ])
+            bundle.write_rejected_clues([RejectedClue(kind="path", value="../secret.c", source="cli", item_id="1", reason="outside_repo")])
+
+            with open(os.path.join(bundle.path, "code_evidence_locations.json"), encoding="utf-8") as f:
+                locations = json.load(f)
+            self.assertEqual(locations["items"][0]["item_id"], "1")
+            self.assertEqual(locations["items"][0]["collected_locations"][0]["path"], "src/a.c")
+            self.assertEqual(locations["items"][0]["cited_evidence_locations"][0]["symbol"], "Login")
+
+            with open(os.path.join(bundle.path, "rejected_clues.json"), encoding="utf-8") as f:
+                rejected = json.load(f)
+            self.assertEqual(rejected[0]["reason"], "outside_repo")
+            self.assertFalse(os.path.exists(os.path.join(bundle.path, "code_context.json")))
 
 
 if __name__ == "__main__":

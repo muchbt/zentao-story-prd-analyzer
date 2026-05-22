@@ -1,0 +1,30 @@
+{
+  "generated_at": "2026-05-21T21:28:31.086106+08:00",
+  "count": 1,
+  "prd_dir": "docs/prd",
+  "issue_dir": "docs/issue",
+  "items": [
+    {
+      "item_id": "5939",
+      "item_type": "requirement",
+      "title": "T",
+      "status": "active",
+      "priority": "1",
+      "document_type": "PRD",
+      "document_path": "docs/prd/PRD-requirement-5939-T.md",
+      "is_diagnostic": false,
+      "conclusion": "完成",
+      "confidence": "高",
+      "has_error": false,
+      "error": "",
+      "insufficient_evidence": false,
+      "evidence_count": 1,
+      "recommendation_count": 1,
+      "verification_count": 1,
+      "writeback": {
+        "supported": false,
+        "status": "not_implemented"
+      }
+    }
+  ]
+}

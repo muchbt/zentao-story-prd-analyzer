@@ -4,7 +4,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from writeback import prepare_writeback_status, writeback_to_zentao
+from zentao_analyzer.writeback import prepare_writeback_status, writeback_to_zentao
 
 
 class TestWriteback(unittest.TestCase):

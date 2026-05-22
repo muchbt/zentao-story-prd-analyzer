@@ -56,6 +56,18 @@ inputs:
     description: 在 debug bundle 中保存代码上下文快照
     type: boolean
     default: false
+  - name: keywords
+    description: 额外代码关键词线索，逗号分隔
+    type: string
+  - name: paths
+    description: 额外代码路径线索，逗号分隔，必须位于 repo_path 内
+    type: string
+  - name: symbols
+    description: 额外函数、类或符号线索，逗号分隔
+    type: string
+  - name: clues_file
+    description: 按禅道条目 ID 提供代码线索的 JSON 文件
+    type: string
 outputs:
   - name: prd_docs
     description: 自动生成的 PRD 文档列表，包括 LLM 判断和优先级评分

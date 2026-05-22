@@ -4,8 +4,8 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from prompts import build_feature_prompt, build_defect_prompt
-from zentao_client import ZentaoItem
+from zentao_analyzer.prompts import build_feature_prompt, build_defect_prompt
+from zentao_analyzer.zentao_client import ZentaoItem
 
 class TestPrompts(unittest.TestCase):
     def test_feature_prompt_contains_fields(self):
@@ -16,6 +16,10 @@ class TestPrompts(unittest.TestCase):
         self.assertIn("Desc", prompt)
         self.assertIn("src/main.c", prompt)
         self.assertIn("完成|部分完成|未完成|无法判断", prompt)
+        self.assertIn('"path": "文件路径"', prompt)
+        self.assertIn('"line_start": 1', prompt)
+        self.assertIn('"reason": "该证据如何支持结论"', prompt)
+        self.assertIn("只能引用代码上下文中出现过的位置", prompt)
         self.assertIn("禁止编造", prompt)
 
     def test_defect_prompt_contains_fields(self):
@@ -26,6 +30,8 @@ class TestPrompts(unittest.TestCase):
         self.assertIn("Crashes", prompt)
         self.assertIn("src/bug.c", prompt)
         self.assertIn("已定位|部分定位|无法定位", prompt)
+        self.assertIn('"path": "文件路径"', prompt)
+        self.assertIn('"line_end": 20', prompt)
         self.assertIn("禁止编造", prompt)
 
     def test_feature_vs_defect_distinct(self):

@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import main
+import zentao_analyzer.main as main
 
 
 def make_item():
@@ -57,14 +57,14 @@ class TestMainPhase4(unittest.TestCase):
             item = make_item()
             analysis = make_analysis()
             argv = [
-                "main.py", "--module", "requirement", "--id", "5939",
+                "zentao_analyzer.main.py", "--module", "requirement", "--id", "5939",
                 "--analyze", "--repo-path", td, "--output-root", td,
                 "--agent", "claude", "--agent-timeout", "5",
                 "--debug-bundle-dir", os.path.join(td, "debug"),
                 "--quiet",
             ]
             with patch.object(main.ZentaoClient, "get_item", return_value=item):
-                with patch("main.analyze", return_value=analysis) as mock_analyze:
+                with patch("zentao_analyzer.main.analyze", return_value=analysis) as mock_analyze:
                     with patch.object(sys, "argv", argv):
                         stdout = io.StringIO()
                         with contextlib.redirect_stdout(stdout):
@@ -84,12 +84,12 @@ class TestMainPhase4(unittest.TestCase):
             item = make_item()
             analysis = make_analysis()
             argv = [
-                "main.py", "--module", "requirement", "--id", "5939",
+                "zentao_analyzer.main.py", "--module", "requirement", "--id", "5939",
                 "--analyze", "--repo-path", td, "--output-root", td,
                 "--no-debug-bundle",
             ]
             with patch.object(main.ZentaoClient, "get_item", return_value=item):
-                with patch("main.analyze", return_value=analysis):
+                with patch("zentao_analyzer.main.analyze", return_value=analysis):
                     with patch.object(sys, "argv", argv):
                         stdout = io.StringIO()
                         with contextlib.redirect_stdout(stdout):
@@ -101,7 +101,7 @@ class TestMainPhase4(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             item = make_item()
             argv = [
-                "main.py", "--module", "requirement", "--id", "5939",
+                "zentao_analyzer.main.py", "--module", "requirement", "--id", "5939",
                 "--quiet",
             ]
             with patch.object(main.ZentaoClient, "get_item", return_value=item):
@@ -119,12 +119,12 @@ class TestMainPhase4(unittest.TestCase):
             analysis = make_analysis()
             log_file = os.path.join(td, "run.jsonl")
             argv = [
-                "main.py", "--module", "requirement", "--id", "5939",
+                "zentao_analyzer.main.py", "--module", "requirement", "--id", "5939",
                 "--analyze", "--repo-path", td, "--output-root", td,
                 "--log-file", log_file,
             ]
             with patch.object(main.ZentaoClient, "get_item", return_value=item):
-                with patch("main.analyze", return_value=analysis):
+                with patch("zentao_analyzer.main.analyze", return_value=analysis):
                     with patch.object(sys, "argv", argv):
                         with contextlib.redirect_stdout(io.StringIO()):
                             main.main()
@@ -140,14 +140,14 @@ class TestMainPhase4(unittest.TestCase):
             analysis = make_analysis()
             debug_dir = os.path.join(td, "debug")
             argv = [
-                "main.py", "--module", "requirement", "--id", "5939",
+                "zentao_analyzer.main.py", "--module", "requirement", "--id", "5939",
                 "--analyze", "--repo-path", td, "--output-root", td,
                 "--debug-bundle-dir", debug_dir,
                 "--debug-include-code",
                 "--quiet",
             ]
             with patch.object(main.ZentaoClient, "get_item", return_value=item):
-                with patch("main.analyze", return_value=analysis):
+                with patch("zentao_analyzer.main.analyze", return_value=analysis):
                     with patch.object(sys, "argv", argv):
                         stdout = io.StringIO()
                         with contextlib.redirect_stdout(stdout):
@@ -161,13 +161,13 @@ class TestMainPhase4(unittest.TestCase):
             item = make_item()
             analysis = make_analysis()
             argv = [
-                "main.py", "--module", "requirement", "--id", "5939",
+                "zentao_analyzer.main.py", "--module", "requirement", "--id", "5939",
                 "--analyze", "--repo-path", td, "--output-root", td,
                 "--debug-bundle-dir", os.path.join(td, "debug"),
                 "--quiet",
             ]
             with patch.object(main.ZentaoClient, "get_item", return_value=item):
-                with patch("main.analyze", return_value=analysis):
+                with patch("zentao_analyzer.main.analyze", return_value=analysis):
                     with patch.object(sys, "argv", argv):
                         stdout = io.StringIO()
                         with contextlib.redirect_stdout(stdout):
