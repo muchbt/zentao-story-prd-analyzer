@@ -202,7 +202,7 @@ python3 main.py --module story --project 3 --analyze --repo-path ./my-repo
 | 宿主环境 | `--agent` 参数 | 说明 |
 |----------|--------------|------|
 | Claude Code | `claude` | 调用本机 `claude` CLI |
-| OpenCode | `opencode` | 调用本机 `opencode agent` |
+| OpenCode | `opencode` | 调用本机 `opencode run` |
 | Codex | `codex` | 调用本机 `codex exec` |
 
 如果未指定 `--agent` 且未设置 `LLM_AGENT` 环境变量，程序会自动检测：`claude` -> `codex` -> `opencode`。
@@ -227,7 +227,15 @@ python3 main.py --module requirement --id 5939 --analyze --repo-path . --agent c
 
 `codex` 调用本机 `codex exec` 命令；`opencode` 调用本机 `opencode run` 命令。显式传入 `--model` 时才会把模型参数传给对应 CLI。
 
-为减少交互，Agent CLI 调用会使用当前默认的跳过权限确认参数。Prompt 和 Skill 明确要求 Agent 只读取和搜索目标仓库，不得修改、创建、删除源码、配置、测试或构建文件；允许写入范围仅限 debug bundle、PRD/ISSUE 文档、summary、显式 `--output` 和显式 `--log-file`。如需系统级强约束，应在宿主环境使用只读工作区或更严格 sandbox。
+Agent CLI 子进程只用于读取和搜索目标仓库，并返回结构化 JSON 分析结果。只有 analyzer 进程可以写入 debug bundle、PRD/ISSUE 文档、summary、显式 `--output` 和显式 `--log-file`。
+
+默认权限策略：
+
+- Claude 默认限制为只读工具 `Read,Grep,Glob`。
+- Codex 默认使用 `codex exec --sandbox read-only`。
+- OpenCode 不默认启用 `--dangerously-skip-permissions`，只使用宿主 CLI 的默认权限行为。
+
+不要通过额外参数授予 Agent CLI 子进程写文件能力，除非你明确接受其可能修改目标仓库或生成文档的风险。
 
 ### 日志
 

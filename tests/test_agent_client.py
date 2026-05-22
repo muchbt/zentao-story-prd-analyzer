@@ -39,7 +39,9 @@ class TestAgentClientClaude(unittest.TestCase):
         cmd = mock_run.call_args[0][0]
         self.assertIn("--model", cmd)
         self.assertIn("sonnet", cmd)
-        self.assertIn("--dangerously-skip-permissions", cmd)
+        self.assertIn("--tools", cmd)
+        self.assertIn("Read,Grep,Glob", cmd)
+        self.assertNotIn("--dangerously-skip-permissions", cmd)
         self.assertEqual(mock_run.call_args.kwargs["input"], "prompt")
         self.assertEqual(mock_run.call_args.kwargs["cwd"], "/repo")
 
@@ -62,9 +64,11 @@ class TestAgentClientCodex(unittest.TestCase):
         self.assertTrue(result.ok)
         cmd = mock_run.call_args[0][0]
         self.assertEqual(cmd[:4], ["codex", "exec", "-C", "/repo"])
+        self.assertIn("--sandbox", cmd)
+        self.assertIn("read-only", cmd)
         self.assertIn("-m", cmd)
         self.assertIn("gpt-5", cmd)
-        self.assertIn("--dangerously-bypass-approvals-and-sandbox", cmd)
+        self.assertNotIn("--dangerously-bypass-approvals-and-sandbox", cmd)
         self.assertEqual(mock_run.call_args.kwargs["input"], "prompt")
         self.assertEqual(mock_run.call_args.kwargs["cwd"], "/repo")
 
@@ -85,7 +89,7 @@ class TestAgentClientOpenCode(unittest.TestCase):
         self.assertEqual(cmd[:2], ["opencode", "run"])
         self.assertIn("--model", cmd)
         self.assertIn("model-a", cmd)
-        self.assertIn("--dangerously-skip-permissions", cmd)
+        self.assertNotIn("--dangerously-skip-permissions", cmd)
         self.assertEqual(cmd[-1], "prompt")
 
 

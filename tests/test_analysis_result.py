@@ -30,6 +30,7 @@ class TestAnalysisResult(unittest.TestCase):
         self.assertEqual(result.evidence, ["file.c:foo()"])
         self.assertEqual(result.evidence_text, ["file.c:foo()"])
         self.assertEqual(result.raw_response, "raw")
+        self.assertFalse(hasattr(result, "output_md"))
 
     def test_from_llm_json_structured_evidence(self):
         item = ZentaoItem(id="6", type="story", title="T")

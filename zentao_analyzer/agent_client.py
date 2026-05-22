@@ -106,6 +106,7 @@ CLAUDE_SYSTEM_PROMPT = (
     "你是代码分析 Agent。只返回一个 JSON 对象，不要输出 Markdown。"
     "必须包含 conclusion、evidence、recommendations、verification、confidence 等字段。"
 )
+CLAUDE_READ_ONLY_TOOLS = "Read,Grep,Glob"
 
 
 def _has_any_arg(args: List[str], names: List[str]) -> bool:
@@ -121,11 +122,9 @@ def build_claude_command(config: AgentConfig, prompt: str):
         args.extend(["--output-format", "text"])
     if "--append-system-prompt" not in args:
         args.extend(["--append-system-prompt", CLAUDE_SYSTEM_PROMPT])
-    if "--disallowedTools" not in args:
-        args.extend(["--disallowedTools", "Task"])
-    permission_flags = ["--dangerously-skip-permissions", "--permission-mode", "--allowedTools"]
-    if not _has_any_arg(args, permission_flags):
-        args.append("--dangerously-skip-permissions")
+    tool_flags = ["--tools", "--allowedTools", "--allowed-tools", "--disallowedTools", "--disallowed-tools"]
+    if not _has_any_arg(args, tool_flags):
+        args.extend(["--tools", CLAUDE_READ_ONLY_TOOLS])
     prompt_via = (config.prompt_via or "stdin").lower()
     if prompt_via == "arg":
         args = [arg for arg in args if arg not in ("-p", "--print")]
@@ -224,7 +223,8 @@ class AgentClient:
             "exec",
             "-C",
             self.config.cwd or ".",
-            "--dangerously-bypass-approvals-and-sandbox",
+            "--sandbox",
+            "read-only",
         ] + list(self.config.extra_args or [])
         if self.config.model:
             args.extend(["-m", self.config.model])
@@ -263,7 +263,7 @@ class AgentClient:
     def _call_opencode(self, prompt: str) -> AgentResult:
         started = _now_ms()
         command = self.config.command or "opencode"
-        args = [command, "run", "--dangerously-skip-permissions"]
+        args = [command, "run"]
         if self.config.model:
             args.extend(["--model", self.config.model])
         args.extend(list(self.config.extra_args or []))
@@ -281,7 +281,7 @@ class AgentClient:
         except FileNotFoundError as exc:
             return AgentResult(ok=False, error_kind="config", error=f"opencode 命令不存在: {exc}", duration_ms=_now_ms() - started, agent="opencode", model=self.config.model)
         except subprocess.TimeoutExpired as exc:
-            return AgentResult(ok=False, error_kind="timeout", error=f"opencode agent 超时: {exc}", duration_ms=_now_ms() - started, agent="opencode", model=self.config.model)
+            return AgentResult(ok=False, error_kind="timeout", error=f"opencode run 超时: {exc}", duration_ms=_now_ms() - started, agent="opencode", model=self.config.model)
         except Exception as exc:
             return AgentResult(ok=False, error_kind=classify_agent_error(str(exc)), error=redact_sensitive(str(exc)), duration_ms=_now_ms() - started, agent="opencode", model=self.config.model)
 
@@ -292,7 +292,7 @@ class AgentClient:
             return AgentResult(
                 ok=False,
                 raw_response=redact_sensitive(stdout),
-                error=error_text or f"opencode agent 返回码 {completed.returncode}",
+                error=error_text or f"opencode run 返回码 {completed.returncode}",
                 error_kind=classify_agent_error(error_text),
                 duration_ms=_now_ms() - started,
                 agent="opencode",

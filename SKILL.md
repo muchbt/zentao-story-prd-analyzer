@@ -54,7 +54,7 @@ Never print tokens, passwords, API keys, Authorization headers, or full login co
 - Do not use removed options `--keywords`, `--symbols`, `--incremental`, or `--last-commit`.
 - If providing clues, use `--clues` for Search Hints and `--paths` only for repository files.
 
-The analyzer uses Agent CLI permissions intended to reduce interactive prompts. The Agent must not modify, create, or delete Target Repository source, config, test, or build files. Allowed writes are limited to debug bundle, PRD/ISSUE documents, summary, explicit `--output`, and explicit `--log-file`.
+The Agent CLI subprocess is read/search-only. It must return structured JSON to the analyzer and must not write Target Repository files, debug bundles, PRD/ISSUE documents, summaries, explicit output files, or log files. Only the analyzer process writes generated outputs.
 
 ## Command Templates
 

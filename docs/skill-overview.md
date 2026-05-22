@@ -40,4 +40,4 @@ Seed Path 只接受 `repo_path` 内的文件，不接受目录。目录、模块
 
 ## 安全边界
 
-Agent CLI 只应读取和搜索目标仓库，不得修改、创建或删除目标仓库源码、配置、测试或构建文件。允许写入范围仅限 debug bundle、PRD/ISSUE 文档、summary、显式 `--output` 和显式 `--log-file`。
+Agent CLI 子进程只应读取和搜索目标仓库，并把结构化 JSON 分析结果返回给 analyzer。它不得修改、创建或删除目标仓库源码、配置、测试、构建文件，也不得直接写 debug bundle、PRD/ISSUE 文档、summary、显式 `--output` 或显式 `--log-file`；这些输出只能由 analyzer 进程写入。

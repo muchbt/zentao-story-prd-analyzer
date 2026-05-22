@@ -47,7 +47,6 @@ def make_analysis(seed_path="src/a.c", rejected=None):
     analysis.priority = "高"
     analysis.confidence = "高"
     analysis.error = ""
-    analysis.output_md = "LLM 理解"
     analysis.raw_response = '{"conclusion":"完成"}'
     analysis.cited_evidence_locations = [
         EvidenceLocation(path="src/a.c", line_start=1, line_end=3, reason="ok", source="agent")

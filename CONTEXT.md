@@ -72,6 +72,14 @@ _Avoid_: Search result, collected-only location
 A machine-readable index of analyzed Zentao Items, generated documents, analysis status, evidence counts, and diagnostic paths.
 _Avoid_: PRD document, ISSUE document, full review report
 
+**Analyzer Process**:
+The analyzer runtime that owns generated outputs such as Debug Bundles, PRD Documents, ISSUE Documents, Summary Reports, explicit output files, and explicit log files.
+_Avoid_: Agent CLI subprocess, code search agent
+
+**Agent CLI Subprocess**:
+An external Agent CLI invocation used by the Analyzer Process to search and read the Target Repository, then return an Analysis Result payload.
+_Avoid_: Analyzer process, document writer
+
 **Evidence Traceability Phase**:
 A follow-up implementation phase that improves code clue inputs, seed locations, cited evidence locations, and debug-bundle auditability after the initial four-stage pipeline exists.
 _Avoid_: Phase 2 patch, Phase 4 patch
@@ -110,6 +118,9 @@ _Avoid_: PRD generator, code analyzer, Agent CLI Skill
 - A **PRD Document** or **ISSUE Document** shows key **Cited Evidence Locations**, not every **Seed Location**.
 - A **Summary Report** indexes generated **PRD Documents** and **ISSUE Documents** for automation.
 - An **Analysis Result** is derived from a **Zentao Item** and **Code Evidence**, and may be guided by **Code Clues**.
+- The **Analyzer Process** is the only writer of generated analyzer outputs.
+- An **Agent CLI Subprocess** must not write **PRD Documents**, **ISSUE Documents**, **Debug Bundles**, **Summary Reports**, source files, configuration files, test files, or build files.
+- An **Agent CLI Subprocess** may read and search the **Target Repository** to produce an **Analysis Result** payload for the **Analyzer Process**.
 - An **ISSUE Document** is never a Zentao input module name.
 - The **Evidence Traceability Phase** extends the four-stage pipeline without redefining the original stage boundaries.
 - An **Agent CLI Skill** is an installation and invocation wrapper around the analyzer, not a new analysis stage.
@@ -137,3 +148,4 @@ _Avoid_: PRD generator, code analyzer, Agent CLI Skill
 - "SKILL" was used to mean both `SKILL.yaml` metadata and an installable Agent CLI skill; resolved: **Agent CLI Skill** means the installable wrapper, while `SKILL.yaml` remains project capability metadata.
 - "clue" was used to mean both prompt search text and source paths loaded by the analyzer; resolved: **Search Hint** guides Agent search, while **Seed Path** provides source content.
 - "collected location" implied the analyzer collected all relevant code; resolved: use **Seed Location** for source ranges preloaded from **Seed Paths**.
+- "allowed writes" was ambiguous about whether an Agent CLI could write generated analyzer outputs; resolved: only the **Analyzer Process** writes generated outputs, while an **Agent CLI Subprocess** is read/search-only.

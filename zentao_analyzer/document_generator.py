@@ -57,9 +57,6 @@ def _split_evidence(text: str) -> str:
 
 def _build_llm_summary(analysis: AnalysisResult) -> str:
     """构建 LLM 理解摘要"""
-    if analysis.output_md:
-        return analysis.output_md
-
     if analysis.error:
         return f"分析过程中出现错误：{analysis.error}。无法生成完整结论。"
 
@@ -115,6 +112,28 @@ def _render_key_evidence_table(analysis: AnalysisResult) -> str:
             )
         )
     return "\n".join(rows)
+
+
+def validate_document_consistency(analysis: AnalysisResult, document: DocumentResult):
+    issues = []
+    try:
+        with open(document.document_path, "r", encoding="utf-8") as f:
+            content = f.read()
+    except OSError:
+        return ["document_unreadable"]
+
+    expected_diagnostic = bool(analysis.error) or analysis.is_insufficient_evidence()
+    if document.is_diagnostic != expected_diagnostic:
+        issues.append("diagnostic_flag_mismatch")
+    if not expected_diagnostic and "诊断文档：当前条目未能生成完整" in content:
+        issues.append("unexpected_diagnostic_banner")
+    locations = getattr(analysis, "cited_evidence_locations", []) or []
+    if locations:
+        if "## 关键代码证据" not in content:
+            issues.append("missing_key_evidence_section")
+        if not any(location.path and location.path in content for location in locations):
+            issues.append("missing_cited_evidence_path")
+    return issues
 
 
 def _source_info(item: ZentaoItem, generated_at: str) -> str:

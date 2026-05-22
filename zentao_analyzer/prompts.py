@@ -18,8 +18,7 @@ _COMMON_SCHEMA = '''  "evidence": [
   "recommendations": ["修改建议1", "..."],
   "verification": ["验证建议1", "..."],
   "priority": "高|中|低",
-  "confidence": "高|中|低",
-  "output_md": ""'''
+  "confidence": "高|中|低"'''
 
 
 _FEATURE_TEMPLATE = """你是高级代码分析 Agent。请根据以下禅道条目和目标代码仓库，判断功能实现完成度。
@@ -42,8 +41,9 @@ ID: {id}
 
 【权限与写入边界】
 - 只允许读取和搜索代码仓库。
+- 你是 Agent CLI 子进程，只能返回 JSON 分析结果，不能写入任何文件。
 - 不得修改、创建、删除目标仓库源码、配置、测试或构建文件。
-- 只允许 analyzer 写入 debug bundle、PRD/ISSUE 文档、summary、显式 --output、显式 --log-file。
+- 只有 analyzer 进程可以写入 debug bundle、PRD/ISSUE 文档、summary、显式 --output、显式 --log-file。
 
 【任务要求】
 1. 主动搜索代码仓库，查找与条目相关的代码实现。
@@ -80,8 +80,9 @@ ID: {id}
 
 【权限与写入边界】
 - 只允许读取和搜索代码仓库。
+- 你是 Agent CLI 子进程，只能返回 JSON 分析结果，不能写入任何文件。
 - 不得修改、创建、删除目标仓库源码、配置、测试或构建文件。
-- 只允许 analyzer 写入 debug bundle、PRD/ISSUE 文档、summary、显式 --output、显式 --log-file。
+- 只有 analyzer 进程可以写入 debug bundle、PRD/ISSUE 文档、summary、显式 --output、显式 --log-file。
 
 【任务要求】
 1. 主动搜索代码仓库，查找与缺陷描述相关的代码实现。

@@ -44,7 +44,6 @@ def make_analysis():
     analysis.priority = "高"
     analysis.confidence = "高"
     analysis.error = ""
-    analysis.output_md = "LLM 理解"
     analysis.raw_response = '{"conclusion":"完成"}'
     analysis.cited_evidence_locations = []
     analysis.seed_locations = []

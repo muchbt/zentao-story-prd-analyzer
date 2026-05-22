@@ -9,7 +9,7 @@ from .analyzer import analyze
 from .app_config import build_runtime_config
 from .code_clues import build_search_hints, build_seed_paths, load_clues_file
 from .debug_bundle import build_debug_bundle
-from .document_generator import generate_document
+from .document_generator import generate_document, validate_document_consistency
 from .run_logger import RunLogger
 from .summary_report import build_summary_item, write_summary_report
 from .writeback import prepare_writeback_status
@@ -268,12 +268,22 @@ def main():
 
         logger.info("generate_docs", "started", status="running", item_id=item.id)
         doc = generate_document(item, result, output_root=output_root)
+        document_consistency_issues = validate_document_consistency(result, doc)
+        if document_consistency_issues:
+            logger.error(
+                "generate_docs",
+                "consistency_failed",
+                status="failed",
+                item_id=item.id,
+                issues=document_consistency_issues,
+            )
         logger.info("generate_docs", "done", status="done", item_id=item.id, document_path=doc.document_path)
         documents.append({
             "item_id": doc.item_id,
             "document_type": doc.document_type,
             "document_path": doc.document_path,
             "is_diagnostic": doc.is_diagnostic,
+            "consistency_issues": document_consistency_issues,
         })
 
         summary_items.append(

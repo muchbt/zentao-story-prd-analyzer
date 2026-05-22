@@ -7,7 +7,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from zentao_analyzer.analysis_result import AnalysisResult, EvidenceLocation
-from zentao_analyzer.document_generator import generate_document, sanitize_title, DocumentResult
+from zentao_analyzer.document_generator import generate_document, sanitize_title, DocumentResult, validate_document_consistency
 from zentao_analyzer.zentao_client import ZentaoItem
 
 
@@ -89,6 +89,28 @@ class TestDocumentGenerator(unittest.TestCase):
             with open(doc.document_path, encoding="utf-8") as f:
                 content = f.read()
             self.assertIn("| src/a.c | 12-40 | Login | 支持结论 |", content)
+            self.assertEqual(validate_document_consistency(analysis, doc), [])
+
+    def test_document_consistency_reports_diagnostic_banner_on_success(self):
+        with tempfile.TemporaryDirectory() as td:
+            item = ZentaoItem(id="7", type="story", title="T")
+            analysis = AnalysisResult(
+                item_id="7",
+                item_type="story",
+                item_title="T",
+                conclusion="完成",
+                evidence=["src/a.c:1-1 ok"],
+                confidence="高",
+                cited_evidence_locations=[EvidenceLocation(path="src/a.c", line_start=1, line_end=1, reason="ok")],
+            )
+            doc = generate_document(item, analysis, output_root=td)
+            with open(doc.document_path, "w", encoding="utf-8") as f:
+                f.write("> 诊断文档：当前条目未能生成完整 PRD。\n")
+
+            issues = validate_document_consistency(analysis, doc)
+
+        self.assertIn("unexpected_diagnostic_banner", issues)
+        self.assertIn("missing_cited_evidence_path", issues)
 
     def test_diagnostic_document_still_in_prd(self):
         """诊断文档仍使用 PRD 目录和文件名，document_type 仍为 PRD"""

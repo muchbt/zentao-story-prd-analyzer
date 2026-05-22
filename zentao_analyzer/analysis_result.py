@@ -119,7 +119,6 @@ class AnalysisResult:
     verification: List[str] = dataclasses.field(default_factory=list)
     priority: str = ""
     confidence: str = ""
-    output_md: str = ""
     error: str = ""
     error_kind: str = ""
     raw_response: str = dataclasses.field(default="", repr=False)
@@ -147,7 +146,6 @@ class AnalysisResult:
             verification=data.get("verification", []),
             priority=data.get("priority", ""),
             confidence=data.get("confidence", ""),
-            output_md=data.get("output_md", ""),
             raw_response=raw_response,
             evidence_text=evidence_text,
             cited_evidence_locations=cited_locations,

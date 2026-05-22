@@ -43,7 +43,6 @@ class TestMainPhase3(unittest.TestCase):
             mock_analysis.confidence = "高"
             mock_analysis.error = ""
             mock_analysis.is_insufficient_evidence.return_value = False
-            mock_analysis.output_md = ""
             mock_analysis.raw_response = "secret"
             mock_analysis.cited_evidence_locations = []
             mock_analysis.seed_locations = []

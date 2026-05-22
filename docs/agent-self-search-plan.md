@@ -56,9 +56,9 @@ Zentao Item + Target Repository + 可选 Search Hint + 可选 Seed Path
 | 8 | 默认 agent | Skill 触发时跟宿主 CLI 一致；直接 `main.py` 时按 `claude -> codex -> opencode` 自动检测 |
 | 9 | agent 命令配置 | 拆成 `--claude-command`、`--codex-command`、`--opencode-command` |
 | 10 | model 参数 | 用户显式指定时才传；`claude --model`、`codex -m`、`opencode --model` |
-| 11 | dangerous 权限 | 保持当前减少交互的默认策略，但 prompt/文档必须声明写入边界 |
-| 12 | 写入边界 | Agent CLI 不得修改目标仓库源码、配置、测试、构建文件 |
-| 13 | 允许写入 | debug bundle、PRD/ISSUE 文档、summary、显式 `--output`、显式 `--log-file` |
+| 11 | dangerous 权限 | 不默认启用 broad bypass；Agent CLI 子进程必须只读/只搜索 |
+| 12 | 写入边界 | Agent CLI 子进程不得写任何文件；只有 analyzer 进程写生成输出 |
+| 13 | 允许写入 | analyzer 进程写 debug bundle、PRD/ISSUE 文档、summary、显式 `--output`、显式 `--log-file` |
 | 14 | 旧 CLI 参数 | 开发阶段直接移除 `--keywords`、`--symbols`、`--incremental`、`--last-commit` |
 | 15 | `ZentaoItem.keywords` | 完整移除，不保留空字段 |
 | 16 | 旧 clues file 格式 | 直接移除 `keywords`/`symbols` 字段，使用 `clues`/`paths` |
@@ -222,9 +222,11 @@ def _call_codex(self, prompt: str) -> AgentResult:
 
 权限策略：
 
-- 继续保留当前减少用户交互的 dangerous 默认策略。
-- 但 prompt 必须声明不得修改目标仓库源码、配置、测试、构建文件。
-- README/SKILL 必须说明该限制主要由 prompt/Skill 约束，不是系统级沙箱强制。
+- 不默认启用 broad bypass 权限。
+- Claude 默认使用只读工具白名单。
+- Codex 默认使用 read-only sandbox。
+- OpenCode 不默认启用 `--dangerously-skip-permissions`。
+- Prompt/README/SKILL 必须声明 Agent CLI 子进程只读，只有 analyzer 进程可以写生成输出。
 
 模型传递：
 
@@ -289,7 +291,8 @@ callback, ecall, xcall_is_need_enter_callback
 【权限与写入边界】
 - 只允许读取和搜索代码仓库。
 - 不得修改、创建、删除目标仓库源码、配置、测试或构建文件。
-- 只允许 analyzer 写入 debug bundle、PRD/ISSUE 文档、summary、显式 --output、显式 --log-file。
+- 你是 Agent CLI 子进程，只能返回 JSON 分析结果，不能写入任何文件。
+- 只有 analyzer 进程可以写入 debug bundle、PRD/ISSUE 文档、summary、显式 --output、显式 --log-file。
 
 【任务要求】
 - 主动搜索代码仓库，查找与条目相关的代码实现。
@@ -486,8 +489,8 @@ summary item 字段：
 - `--paths` 是 Seed Path，只接受仓库内文件，不接受目录。
 - `--clues-file` 新格式为 `clues`/`paths`。
 - 删除 `--keywords`、`--symbols`、`--incremental`、`--last-commit`。
-- dangerous 权限默认保留，但 Agent 不得修改目标仓库代码、配置、测试、构建文件。
-- 允许写入范围：debug bundle、PRD/ISSUE、summary、显式 `--output`、显式 `--log-file`。
+- Agent CLI 子进程只读/只搜索，不得写任何文件。
+- analyzer 进程负责写 debug bundle、PRD/ISSUE、summary、显式 `--output`、显式 `--log-file`。
 
 ### 9.2 SKILL.md
 
@@ -564,7 +567,7 @@ printf '%s\n' '{"conclusion":"无法判断","evidence":[],"recommendations":[],"
 | 风险 | 缓解 |
 |------|------|
 | Agent CLI 输出格式不稳定 | 先验证 Claude/Codex/OpenCode stdout/stderr，再写解析测试 |
-| dangerous 权限扩大写入面 | prompt、README、SKILL 明确禁止修改目标仓库代码；建议宿主环境使用只读或受限 sandbox |
+| Agent CLI 写入面扩大 | 默认只读/只搜索；Claude 使用只读工具，Codex 使用 read-only sandbox，OpenCode 不默认跳过权限 |
 | Agent 编造 evidence | 本地校验 path 和行号，校验失败降低置信并记录 debug |
 | 无 seed 时搜索耗时增加 | 保持 900s 默认超时，允许 Search Hint 缩小搜索方向 |
 | `--paths` 不再支持目录 | README/SKILL 明确目录应放入 `--clues` 作为 Search Hint |
@@ -576,7 +579,7 @@ printf '%s\n' '{"conclusion":"无法判断","evidence":[],"recommendations":[],"
 - [ ] Codex CLI `exec` 的实际 stdin/stdout/stderr 行为。
 - [ ] Codex CLI `-m` 参数是否与当前版本一致。
 - [ ] OpenCode `--model` 参数实际行为。
-- [ ] dangerous 默认权限下 prompt 写入边界是否足够清晰。
+- [x] Agent CLI 子进程只读边界是否足够清晰，并由命令级默认约束支撑。
 - [ ] Seed context 默认限制：3 文件、50 行、2000 tokens 是否适合 demo 仓库。
 - [ ] Seed context 8000 tokens 硬上限是否足以覆盖用户显式指定的大文件入口。
 - [ ] 本地 evidence 校验失败时的用户可见表达是否清晰。
