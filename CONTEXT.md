@@ -28,6 +28,10 @@ _Avoid_: Bug, ticket, feedback, issue input
 A code-evidence-based conclusion about a Zentao Item's completion status, suspected cause, confidence, and recommendations.
 _Avoid_: Raw Zentao data, fetched item
 
+**LLM Understanding Summary**:
+A natural-language restatement of what the Agent understood the Zentao Item to require or report before evaluating code evidence.
+_Avoid_: Analysis Result, Code Evidence, recommendation list
+
 **Code Clue**:
 An explicit user-provided aid for finding relevant source code for a Zentao Item.
 _Avoid_: Analysis result, proof, collected code
@@ -104,6 +108,7 @@ _Avoid_: PRD generator, code analyzer, Agent CLI Skill
 
 - A **Zentao Item** is classified as either a **Feature Item** or a **Defect Item** before analysis.
 - A **Zentao Item** alone does not contain an **Analysis Result**.
+- An **LLM Understanding Summary** describes the intended meaning of a **Zentao Item** and must not duplicate the **Analysis Result** sections.
 - A **Code Clue** may be either a **Search Hint** or a **Seed Path**.
 - A **Clues File** provides item-specific **Code Clues** when a run analyzes multiple Zentao Items.
 - A **Seed Path** must be a file inside the repository, otherwise it becomes a **Rejected Clue**.

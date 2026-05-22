@@ -33,6 +33,40 @@ def _safe_int(value: Any, default: int = 0) -> int:
         return default
 
 
+def _coerce_str_list(items: Any) -> List[str]:
+    if not isinstance(items, list):
+        return []
+    result: List[str] = []
+    for item in items:
+        if isinstance(item, str):
+            stripped = item.strip()
+            if stripped:
+                result.append(stripped)
+        elif isinstance(item, dict):
+            best = ""
+            for v in item.values() if isinstance(item, dict) else []:
+                s = str(v).strip() if v is not None else ""
+                if len(s) > len(best):
+                    best = s
+            if best:
+                result.append(best)
+            else:
+                text = str(item).strip()
+                if text:
+                    result.append(text)
+        else:
+            text = str(item).strip()
+            if text:
+                result.append(text)
+    return result
+
+
+def _coerce_str(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    return value.strip()
+
+
 def _format_evidence_object(data: Dict[str, Any]) -> str:
     path = str(data.get("path", "")).strip()
     line_start = _safe_int(data.get("line_start"))
@@ -119,6 +153,7 @@ class AnalysisResult:
     verification: List[str] = dataclasses.field(default_factory=list)
     priority: str = ""
     confidence: str = ""
+    understanding_summary: str = ""
     error: str = ""
     error_kind: str = ""
     raw_response: str = dataclasses.field(default="", repr=False)
@@ -139,13 +174,14 @@ class AnalysisResult:
             item_title=item.title,
             conclusion=data.get("conclusion", ""),
             evidence=evidence_text,
-            gaps=data.get("gaps", []),
-            suspected_causes=data.get("suspected_causes", []),
-            affected_scope=data.get("affected_scope", []),
-            recommendations=data.get("recommendations", []),
-            verification=data.get("verification", []),
+            gaps=_coerce_str_list(data.get("gaps", [])),
+            suspected_causes=_coerce_str_list(data.get("suspected_causes", [])),
+            affected_scope=_coerce_str_list(data.get("affected_scope", [])),
+            recommendations=_coerce_str_list(data.get("recommendations", [])),
+            verification=_coerce_str_list(data.get("verification", [])),
             priority=data.get("priority", ""),
             confidence=data.get("confidence", ""),
+            understanding_summary=_coerce_str(data.get("understanding_summary", "")),
             raw_response=raw_response,
             evidence_text=evidence_text,
             cited_evidence_locations=cited_locations,

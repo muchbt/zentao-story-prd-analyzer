@@ -46,6 +46,7 @@ def make_analysis(seed_path="src/a.c", rejected=None):
     analysis.verification = ["验证"]
     analysis.priority = "高"
     analysis.confidence = "高"
+    analysis.understanding_summary = "需求要求记录可追踪证据。"
     analysis.error = ""
     analysis.raw_response = '{"conclusion":"完成"}'
     analysis.cited_evidence_locations = [
@@ -98,6 +99,10 @@ class TestMainPhase5(unittest.TestCase):
                 summary = json.load(f)
             self.assertEqual(summary["items"][0]["seed_location_count"], 1)
             self.assertEqual(summary["items"][0]["cited_evidence_location_count"], 1)
+
+            with open(os.path.join(parsed["debug_bundle"], "analysis_results.json"), encoding="utf-8") as f:
+                analysis_results = json.load(f)
+            self.assertEqual(analysis_results[0]["understanding_summary"], "需求要求记录可追踪证据。")
 
     def test_clues_file_and_rejected_seed_path_are_recorded(self):
         with tempfile.TemporaryDirectory() as td:

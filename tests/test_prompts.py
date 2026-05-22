@@ -21,6 +21,8 @@ class TestPrompts(unittest.TestCase):
         self.assertIn("不得修改、创建、删除目标仓库源码", prompt)
         self.assertIn("只有 analyzer 进程可以写入", prompt)
         self.assertIn("完成|部分完成|未完成|无法判断", prompt)
+        self.assertIn('"understanding_summary"', prompt)
+        self.assertIn("自然语言概述", prompt)
         self.assertIn('"path": "文件路径"', prompt)
         self.assertNotIn("output_md", prompt)
         self.assertNotIn("{{", prompt)
@@ -39,6 +41,7 @@ class TestPrompts(unittest.TestCase):
         prompt = build_defect_prompt(item, repo_path="/repo", search_hints=["CrashHandler"])
         self.assertIn("Crash bug", prompt)
         self.assertIn("已定位|部分定位|无法定位", prompt)
+        self.assertIn('"understanding_summary"', prompt)
         self.assertIn("可能根因", prompt)
         self.assertIn("CrashHandler", prompt)
 

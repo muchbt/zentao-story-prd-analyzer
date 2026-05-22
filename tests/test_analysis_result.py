@@ -21,6 +21,7 @@ class TestAnalysisResult(unittest.TestCase):
             "verification": ["验证1"],
             "priority": "高",
             "confidence": "高",
+            "understanding_summary": "用户需要登录成功后进入首页。",
             "output_md": "# PRD",
         }
         result = AnalysisResult.from_llm_json(item, data, raw_response="raw")
@@ -29,6 +30,7 @@ class TestAnalysisResult(unittest.TestCase):
         self.assertEqual(result.confidence, "高")
         self.assertEqual(result.evidence, ["file.c:foo()"])
         self.assertEqual(result.evidence_text, ["file.c:foo()"])
+        self.assertEqual(result.understanding_summary, "用户需要登录成功后进入首页。")
         self.assertEqual(result.raw_response, "raw")
         self.assertFalse(hasattr(result, "output_md"))
 
@@ -100,6 +102,29 @@ class TestAnalysisResult(unittest.TestCase):
         result = AnalysisResult.from_error(item, "LLM timeout")
         self.assertEqual(result.error, "LLM timeout")
         self.assertTrue(result.is_insufficient_evidence())
+
+    def test_coerce_str_list_from_dict_items(self):
+        item = ZentaoItem(id="10", type="requirement", title="R")
+        data = {
+            "conclusion": "部分完成",
+            "confidence": "中",
+            "gaps": [
+                {"gap": "缺少导出功能", "module": "export"},
+                "未实现批量操作",
+            ],
+            "suspected_causes": [{"cause": "配置缺失"}],
+            "recommendations": [{"rec": "增加导出模块"}],
+            "verification": [{"step": "检查导出按钮"}],
+            "affected_scope": [{"scope": "用户模块"}],
+        }
+        result = AnalysisResult.from_llm_json(item, data)
+        self.assertTrue(all(isinstance(g, str) for g in result.gaps))
+        self.assertIn("缺少导出功能", result.gaps)
+        self.assertIn("未实现批量操作", result.gaps)
+        self.assertTrue(all(isinstance(s, str) for s in result.suspected_causes))
+        self.assertTrue(all(isinstance(r, str) for r in result.recommendations))
+        self.assertTrue(all(isinstance(v, str) for v in result.verification))
+        self.assertTrue(all(isinstance(a, str) for a in result.affected_scope))
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

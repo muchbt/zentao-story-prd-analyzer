@@ -18,7 +18,8 @@ _COMMON_SCHEMA = '''  "evidence": [
   "recommendations": ["修改建议1", "..."],
   "verification": ["验证建议1", "..."],
   "priority": "高|中|低",
-  "confidence": "高|中|低"'''
+  "confidence": "高|中|低",
+  "understanding_summary": "用自然语言概述你对禅道条目需求或问题的理解，不要重复证据、缺口、建议或验证步骤"'''
 
 
 _FEATURE_TEMPLATE = """你是高级代码分析 Agent。请根据以下禅道条目和目标代码仓库，判断功能实现完成度。
@@ -53,7 +54,8 @@ ID: {id}
 5. evidence 必须引用仓库中实际存在的文件和行号，禁止编造。
 6. 如果代码仓库不足以判断，请设置 conclusion="无法判断"、confidence="低"，在 evidence 中说明"相关代码证据不足"。
 7. confidence="高" 意味着有直接代码证据支持；confidence="中" 意味着有间接证据或推断；confidence="低" 意味着证据不足。
-8. JSON Schema:
+8. understanding_summary 只概述你对需求本身的理解，不要复制 conclusion、evidence、gaps、recommendations 或 verification。
+9. JSON Schema:
 {{
   "conclusion": "完成|部分完成|未完成|无法判断",
 {common_schema}
@@ -92,7 +94,8 @@ ID: {id}
 5. evidence 必须引用仓库中实际存在的文件和行号，禁止编造。
 6. 如果代码仓库不足以分析，请设置 conclusion="无法定位"、confidence="低"，在 suspected_causes 中说明"相关代码证据不足"。
 7. confidence="高" 意味着有直接代码证据支持；confidence="中" 意味着有间接证据或推断；confidence="低" 意味着证据不足。
-8. JSON Schema:
+8. understanding_summary 只概述你对缺陷或反馈本身的理解，不要复制 conclusion、evidence、suspected_causes、recommendations 或 verification。
+9. JSON Schema:
 {{
   "conclusion": "已定位|部分定位|无法定位",
 {common_schema}

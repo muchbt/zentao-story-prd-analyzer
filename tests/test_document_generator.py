@@ -91,6 +91,30 @@ class TestDocumentGenerator(unittest.TestCase):
             self.assertIn("| src/a.c | 12-40 | Login | 支持结论 |", content)
             self.assertEqual(validate_document_consistency(analysis, doc), [])
 
+    def test_document_uses_understanding_summary_without_repeating_analysis(self):
+        with tempfile.TemporaryDirectory() as td:
+            item = ZentaoItem(id="8", type="requirement", title="回拨", description="进入回拨模式")
+            analysis = AnalysisResult(
+                item_id="8",
+                item_type="requirement",
+                item_title="回拨",
+                conclusion="部分完成",
+                understanding_summary="TCAM 需要在通话结束后进入 25 分钟回拨模式。",
+                evidence=["src/xcall.c:1-5 已实现定时器"],
+                recommendations=["补充来电拒绝逻辑"],
+                verification=["验证回拨超时"],
+                confidence="中",
+            )
+
+            doc = generate_document(item, analysis, output_root=td)
+
+            with open(doc.document_path, encoding="utf-8") as f:
+                content = f.read()
+            summary = content.split("## LLM 理解摘要", 1)[1].split("## 实现完成度", 1)[0]
+            self.assertIn("TCAM 需要在通话结束后进入 25 分钟回拨模式。", summary)
+            self.assertNotIn("src/xcall.c", summary)
+            self.assertNotIn("补充来电拒绝逻辑", summary)
+
     def test_document_consistency_reports_diagnostic_banner_on_success(self):
         with tempfile.TemporaryDirectory() as td:
             item = ZentaoItem(id="7", type="story", title="T")

@@ -262,6 +262,7 @@ def main():
             "verification": result.verification,
             "priority": result.priority,
             "confidence": result.confidence,
+            "understanding_summary": _plain_value(getattr(result, "understanding_summary", ""), ""),
             "error": result.error,
             "error_kind": _plain_value(getattr(result, "error_kind", ""), ""),
         })

@@ -45,41 +45,21 @@ def _document_type_from_item_type(item_type: str) -> str:
     return "ISSUE"
 
 
-def _split_evidence(text: str) -> str:
-    if not text:
-        return "无"
-    parts = re.split(r'[；;。]', text)
-    lines = [p.strip() for p in parts if p.strip()]
-    if not lines:
-        return text
-    return "\n".join(f"- {line}" for line in lines)
-
-
 def _build_llm_summary(analysis: AnalysisResult) -> str:
     """构建 LLM 理解摘要"""
     if analysis.error:
         return f"分析过程中出现错误：{analysis.error}。无法生成完整结论。"
 
+    if analysis.understanding_summary:
+        return analysis.understanding_summary
+
     if analysis.is_insufficient_evidence():
-        return "证据不足：未找到与条目直接相关的代码证据，无法做出可靠判断。"
+        return "未提供独立的需求理解摘要；当前分析证据不足，无法生成可靠理解说明。"
 
-    parts = []
+    parts = ["未提供独立的需求理解摘要。"]
     if analysis.conclusion:
-        parts.append(f"结论：{analysis.conclusion}")
-    if analysis.evidence:
-        parts.append(f"证据：\n{_split_evidence('; '.join(analysis.evidence))}")
-    if analysis.gaps:
-        parts.append(f"未实现：{'; '.join(analysis.gaps)}")
-    if analysis.suspected_causes:
-        parts.append(f"可能根因：{'; '.join(analysis.suspected_causes)}")
-    if analysis.affected_scope:
-        parts.append(f"影响范围：{'; '.join(analysis.affected_scope)}")
-    if analysis.recommendations:
-        parts.append(f"建议：{'; '.join(analysis.recommendations)}")
-    if analysis.verification:
-        parts.append(f"验证：{'; '.join(analysis.verification)}")
-
-    return "\n\n".join(parts) if parts else "未提供 LLM 分析摘要。"
+        parts.append(f"代码分析结论为：{analysis.conclusion}。详细证据、缺口和建议见后续章节。")
+    return "\n".join(parts)
 
 
 def _unknown_type_notice(item_type: str) -> str:

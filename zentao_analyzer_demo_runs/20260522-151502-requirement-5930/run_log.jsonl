@@ -1,7 +1,0 @@
-{"timestamp": "2026-05-22T15:15:01+08:00", "level": "info", "stage": "fetch_items", "event": "started", "status": "running", "module": "requirement", "item_id": "5930"}
-{"timestamp": "2026-05-22T15:15:02+08:00", "level": "info", "stage": "fetch_items", "event": "done", "status": "done", "count": 1}
-{"timestamp": "2026-05-22T15:15:02+08:00", "level": "info", "stage": "analyze", "event": "started", "status": "running", "item_id": "5930"}
-{"timestamp": "2026-05-22T15:18:23+08:00", "level": "info", "stage": "analyze", "event": "done", "status": "done", "item_id": "5930", "confidence": "中"}
-{"timestamp": "2026-05-22T15:18:23+08:00", "level": "info", "stage": "generate_docs", "event": "started", "status": "running", "item_id": "5930"}
-{"timestamp": "2026-05-22T15:18:23+08:00", "level": "info", "stage": "generate_docs", "event": "done", "status": "done", "item_id": "5930", "document_path": "docs/prd/PRD-requirement-5930-FC_665094_L3_25R1_1a3_Ecall功能的回拨模式_CN_-TCAM_ECALL_CALLBACK_mode.md"}
-{"timestamp": "2026-05-22T15:18:23+08:00", "level": "info", "stage": "summary_report", "event": "written", "path": "docs/summary_report.json"}
