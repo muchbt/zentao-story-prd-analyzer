@@ -3,34 +3,7 @@ import json
 import os
 import re
 import subprocess
-from collections import Counter
 from typing import Any, Dict, List, Optional
-
-
-_TITLE_WEIGHT = 3
-
-_STOP_WORDS = frozenset({
-    "a", "an", "the",
-    "i", "me", "my", "myself", "we", "our", "ours", "ourselves",
-    "you", "your", "yours", "yourself", "yourselves",
-    "he", "him", "his", "himself", "she", "her", "hers", "herself", "it", "its", "itself",
-    "they", "them", "their", "theirs", "themselves",
-    "this", "that", "these", "those",
-    "who", "whom", "which", "what", "where", "when", "why", "how",
-    "of", "in", "on", "at", "to", "for", "with", "from", "by", "about",
-    "into", "through", "during", "before", "after", "above", "below",
-    "between", "under", "over", "up", "down", "out", "off", "than",
-    "and", "or", "but", "not", "nor", "so", "yet", "both", "either", "neither",
-    "if", "then", "else", "when", "while", "since", "until", "unless",
-    "is", "am", "are", "was", "were", "be", "been", "being",
-    "have", "has", "had", "having", "do", "does", "did", "doing",
-    "will", "would", "shall", "should", "may", "might", "must",
-    "as", "such", "no", "each", "every", "all", "any", "few", "more",
-    "most", "some", "other", "another", "also", "just", "very", "even",
-    "only", "own", "same", "too", "well", "here", "there",
-    "make", "get", "set", "put", "let", "run", "use", "need",
-    "mode", "new", "enter",
-})
 
 
 class ZentaoError(Exception):
@@ -79,7 +52,6 @@ class ZentaoItem:
     assigned_to: str = ""
     created_by: str = ""
     created_date: str = ""
-    keywords: List[str] = dataclasses.field(default_factory=list)
     raw_data: Dict[str, Any] = dataclasses.field(default_factory=dict, repr=False)
 
     @classmethod
@@ -99,19 +71,6 @@ class ZentaoItem:
 
         title = _get("title", "name", default="")
         desc = _get("desc", "description", "spec", "steps", "content", default="")
-        keywords: List[str] = []
-        if title or desc:
-            title_words = [w for w in re.findall(r"[a-zA-Z_]+", title)
-                           if w.lower() not in _STOP_WORDS]
-            desc_words = [w for w in re.findall(r"[a-zA-Z_]+", desc)
-                         if w.lower() not in _STOP_WORDS]
-            freq: Counter = Counter()
-            for w in title_words:
-                freq[w] += _TITLE_WEIGHT
-            for w in desc_words:
-                freq[w] += 1
-            keywords = [w for w, _ in freq.most_common(20)]
-
         return cls(
             id=_get("id", "ID", default=""),
             type=item_type or _get("type", "module", default=""),
@@ -125,7 +84,6 @@ class ZentaoItem:
             assigned_to=_get("assignedTo", "assignedUser", default=""),
             created_by=_get("openedBy", "createdBy", "author", default=""),
             created_date=_get("openedDate", "createdDate", default=""),
-            keywords=keywords,
             raw_data=data,
         )
 

@@ -9,6 +9,7 @@ PKG_DIR="$DIST_DIR/zentao_analyzer"
 
 echo "同步版本 $VERSION 到 $DIST_DIR ..."
 
+rm -rf "$DIST_DIR"
 mkdir -p "$DIST_DIR" "$PKG_DIR"
 
 cp "$SRC_DIR/main.py" "$DIST_DIR/main.py"

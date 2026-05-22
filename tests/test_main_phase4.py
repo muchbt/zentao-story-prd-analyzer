@@ -26,7 +26,6 @@ def make_item():
     item.assigned_to = "dev"
     item.created_by = "pm"
     item.created_date = "2026-05-20"
-    item.keywords = ["test"]
     return item
 
 
@@ -47,6 +46,10 @@ def make_analysis():
     analysis.error = ""
     analysis.output_md = "LLM 理解"
     analysis.raw_response = '{"conclusion":"完成"}'
+    analysis.cited_evidence_locations = []
+    analysis.seed_locations = []
+    analysis.rejected_seed_paths = []
+    analysis.evidence_validation_issues = []
     analysis.is_insufficient_evidence.return_value = False
     return analysis
 

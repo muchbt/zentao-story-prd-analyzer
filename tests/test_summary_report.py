@@ -39,12 +39,12 @@ class TestSummaryReport(unittest.TestCase):
         self.assertEqual(data["error"], "")
         self.assertNotIn("raw_response", json.dumps(data, ensure_ascii=False))
         self.assertNotIn("secret raw", json.dumps(data, ensure_ascii=False))
-        self.assertEqual(data["collected_location_count"], 0)
+        self.assertEqual(data["seed_location_count"], 0)
         self.assertEqual(data["cited_evidence_location_count"], 0)
-        self.assertEqual(data["rejected_clue_count"], 0)
+        self.assertEqual(data["rejected_seed_path_count"], 0)
 
     def test_build_summary_item_with_evidence_counts(self):
-        from zentao_analyzer.code_clues import CodeLocation
+        from zentao_analyzer.analysis_result import EvidenceLocation
 
         item = ZentaoItem(id="2", type="bug", title="Bug")
         analysis = AnalysisResult(
@@ -55,7 +55,7 @@ class TestSummaryReport(unittest.TestCase):
             evidence=["src/a.c:1-2 bug"],
             confidence="高",
             cited_evidence_locations=[
-                CodeLocation(path="src/a.c", line_start=1, line_end=2, source="agent")
+                EvidenceLocation(path="src/a.c", line_start=1, line_end=2, source="agent")
             ],
         )
         document = DocumentResult("2", "bug", "Bug", "ISSUE", "docs/issue/a.md", False)
@@ -64,13 +64,15 @@ class TestSummaryReport(unittest.TestCase):
             analysis,
             document,
             {"supported": False},
-            collected_location_count=3,
-            rejected_clue_count=1,
+            seed_location_count=3,
+            rejected_seed_path_count=1,
+            invalid_evidence_count=2,
             debug_bundle="debug_runs/run",
         )
-        self.assertEqual(data["collected_location_count"], 3)
+        self.assertEqual(data["seed_location_count"], 3)
         self.assertEqual(data["cited_evidence_location_count"], 1)
-        self.assertEqual(data["rejected_clue_count"], 1)
+        self.assertEqual(data["rejected_seed_path_count"], 1)
+        self.assertEqual(data["invalid_evidence_count"], 2)
         self.assertEqual(data["debug_bundle"], "debug_runs/run")
 
     def test_write_summary_report(self):

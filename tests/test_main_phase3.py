@@ -27,7 +27,6 @@ class TestMainPhase3(unittest.TestCase):
             mock_item.assigned_to = "dev"
             mock_item.created_by = "pm"
             mock_item.created_date = "2026-05-20"
-            mock_item.keywords = ["test"]
 
             mock_analysis = MagicMock()
             mock_analysis.item_id = "5939"
@@ -46,6 +45,10 @@ class TestMainPhase3(unittest.TestCase):
             mock_analysis.is_insufficient_evidence.return_value = False
             mock_analysis.output_md = ""
             mock_analysis.raw_response = "secret"
+            mock_analysis.cited_evidence_locations = []
+            mock_analysis.seed_locations = []
+            mock_analysis.rejected_seed_paths = []
+            mock_analysis.evidence_validation_issues = []
 
             with patch.object(main.ZentaoClient, "get_item", return_value=mock_item):
                 with patch("zentao_analyzer.main.analyze", return_value=mock_analysis):
@@ -84,7 +87,6 @@ class TestMainPhase3(unittest.TestCase):
             mock_item.assigned_to = ""
             mock_item.created_by = ""
             mock_item.created_date = ""
-            mock_item.keywords = []
 
             with patch.object(main.ZentaoClient, "get_item", return_value=mock_item):
                 with patch.object(sys, "argv", [

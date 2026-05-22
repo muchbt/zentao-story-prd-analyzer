@@ -16,11 +16,11 @@ inputs:
     description: 本地代码仓库路径
     type: string
   - name: agent
-    description: Agent 类型（openai、codex、claude、opencode）
+    description: Agent CLI 类型（codex、claude、opencode）
     type: string
     default: codex
   - name: model
-    description: OpenAI/Codex 模型名
+    description: Agent CLI 模型名（显式指定时传递）
     type: string
   - name: agent_timeout
     description: Agent 调用超时时间，单位秒
@@ -30,6 +30,14 @@ inputs:
     description: Claude CLI 命令
     type: string
     default: claude
+  - name: codex_command
+    description: Codex CLI 命令
+    type: string
+    default: codex
+  - name: opencode_command
+    description: OpenCode CLI 命令
+    type: string
+    default: opencode
   - name: claude_prompt_via
     description: Claude prompt 传递方式（stdin 或 arg）
     type: string
@@ -56,14 +64,11 @@ inputs:
     description: 在 debug bundle 中保存代码上下文快照
     type: boolean
     default: false
-  - name: keywords
-    description: 额外代码关键词线索，逗号分隔
+  - name: clues
+    description: 搜索建议，逗号分隔，写入 Agent prompt
     type: string
   - name: paths
-    description: 额外代码路径线索，逗号分隔，必须位于 repo_path 内
-    type: string
-  - name: symbols
-    description: 额外函数、类或符号线索，逗号分隔
+    description: Seed Path 文件线索，逗号分隔，必须是 repo_path 内文件
     type: string
   - name: clues_file
     description: 按禅道条目 ID 提供代码线索的 JSON 文件

@@ -6,8 +6,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from zentao_analyzer.analysis_result import AnalysisResult
-from zentao_analyzer.code_clues import CodeLocation
+from zentao_analyzer.analysis_result import AnalysisResult, EvidenceLocation
 from zentao_analyzer.document_generator import generate_document, sanitize_title, DocumentResult
 from zentao_analyzer.zentao_client import ZentaoItem
 
@@ -83,7 +82,7 @@ class TestDocumentGenerator(unittest.TestCase):
                 evidence=["src/a.c:12-40 Login 支持结论"],
                 confidence="高",
                 cited_evidence_locations=[
-                    CodeLocation(path="src/a.c", line_start=12, line_end=40, symbol="Login", reason="支持结论", source="agent")
+                    EvidenceLocation(path="src/a.c", line_start=12, line_end=40, symbol="Login", reason="支持结论", source="agent")
                 ],
             )
             doc = generate_document(item, analysis, output_root=td)

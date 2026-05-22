@@ -32,9 +32,8 @@ python3 main.py --module requirement --id 5939 --analyze --repo-path . --agent c
 
 # 显式提供代码线索
 python3 main.py --module requirement --id 5939 --analyze --repo-path . \
-  --keywords calibration,import \
-  --paths src/calib \
-  --symbols LoadCalibration
+  --clues calibration,LoadCalibration \
+  --paths src/calib/import_config.c
 ```
 
 运行前需要满足以下前置条件：
@@ -52,8 +51,7 @@ python3 main.py --module requirement --id 5939 --analyze --repo-path . \
   ```
 
   如果 `zentao user` 返回 `code: 1004` 或 "Token 已失效"，需要重新登录。注意 `zentao whoami` 命令不存在，请勿使用。
-- 使用 OpenAI/Codex 后端时已配置 `OPENAI_API_KEY` 和 `OPENAI_MODEL`。
-- 使用 Claude 后端时本机可执行 `claude` CLI。
+- 使用 Claude/Codex/OpenCode 后端时，本机分别可执行 `claude`、`codex` 或 `opencode` CLI。
 - `--repo-path` 指向当前运行环境可访问的代码仓库。
 
 ### `SKILL.yaml` 的作用
@@ -64,7 +62,7 @@ python3 main.py --module requirement --id 5939 --analyze --repo-path . \
 
 - 技能名称：`zentao-story-prd-analyzer`
 - 技能能力：从禅道获取需求/缺陷，结合本地代码分析完成度或问题原因，并生成 PRD/ISSUE 文档
-- 输入参数：`project_id`、`item_type`、`repo_path`、`agent`、`model`、`keywords`、`paths`、`symbols`、`clues_file` 等
+- 输入参数：`project_id`、`item_type`、`repo_path`、`agent`、`model`、`clues`、`paths`、`clues_file` 等
 - 输出结果：`prd_docs`
 - 默认运行入口：
 
@@ -205,9 +203,9 @@ python3 main.py --module story --project 3 --analyze --repo-path ./my-repo
 |----------|--------------|------|
 | Claude Code | `claude` | 调用本机 `claude` CLI |
 | OpenCode | `opencode` | 调用本机 `opencode agent` |
-| Codex / 自定义 OpenAI | `codex` | 需要 `OPENAI_API_KEY` + `OPENAI_MODEL` |
+| Codex | `codex` | 调用本机 `codex exec` |
 
-如果未指定 `--agent` 且未设置 `LLM_AGENT` 环境变量，程序会自动检测：本机有 `claude` 命令则默认 `claude`，否则默认 `codex`。
+如果未指定 `--agent` 且未设置 `LLM_AGENT` 环境变量，程序会自动检测：`claude` -> `codex` -> `opencode`。
 
 ```bash
 # Claude Code 环境（推荐）
@@ -216,18 +214,8 @@ python3 main.py --module requirement --id 5939 --analyze --repo-path . --agent c
 # OpenCode 环境
 python3 main.py --module requirement --id 5939 --analyze --repo-path . --agent opencode
 
-# Codex / OpenAI 环境
-python3 main.py --module requirement --id 5939 --analyze --repo-path . --agent codex --model "$OPENAI_MODEL"
-```
-
-> **不要在 Claude Code 环境中使用 `--agent codex`**，否则会报 "openai 模块未安装" 错误。
-
-`openai` 和 `codex` 使用 OpenAI SDK 后端。需要设置：
-
-```bash
-export OPENAI_API_KEY="你的 OpenAI API Key"
-export OPENAI_MODEL="模型名"
-export OPENAI_BASE_URL="可选的兼容 OpenAI 接口地址"
+# Codex 环境
+python3 main.py --module requirement --id 5939 --analyze --repo-path . --agent codex
 ```
 
 `claude` 使用本机 Claude CLI。默认命令是 `claude`，默认通过 stdin 传入 prompt：
@@ -237,7 +225,9 @@ python3 main.py --module requirement --id 5939 --analyze --repo-path . --agent c
 python3 main.py --module requirement --id 5939 --analyze --repo-path . --agent claude --claude-command claude --claude-prompt-via arg
 ```
 
-`opencode` 调用本机 `opencode agent` 命令，通过 stdin 传入 prompt。
+`codex` 调用本机 `codex exec` 命令；`opencode` 调用本机 `opencode run` 命令。显式传入 `--model` 时才会把模型参数传给对应 CLI。
+
+为减少交互，Agent CLI 调用会使用当前默认的跳过权限确认参数。Prompt 和 Skill 明确要求 Agent 只读取和搜索目标仓库，不得修改、创建、删除源码、配置、测试或构建文件；允许写入范围仅限 debug bundle、PRD/ISSUE 文档、summary、显式 `--output` 和显式 `--log-file`。如需系统级强约束，应在宿主环境使用只读工作区或更严格 sandbox。
 
 ### 日志
 
@@ -275,23 +265,21 @@ Debug bundle 会默认脱敏，但仍可能包含业务上下文、prompt 和模
 
 ### 代码线索
 
-代码搜索关键词有三个来源，优先级从低到高：
+代码线索分为两类：
 
-| 来源 | 参数 | 说明 |
+| 类型 | 参数 | 说明 |
 |------|------|------|
-| **自动提取** | 内置 | 从禅道条目的标题和描述中提取英文词，按词频取 Top 20；标题中的词权重 ×3；过滤英文停用词（如 the/is/are 等）；**中文内容不生成搜索关键词** |
-| **CLI 参数** | `--keywords` `--paths` `--symbols` | 逗号分隔，直接作为搜索线索 |
-| **线索文件** | `--clues-file` | JSON 文件，按条目 ID 指定关键词/路径/符号 |
+| Search Hint | `--clues` / `clues_file.clues` | 写入 prompt，指导 Agent 自主搜索，不读取源码 |
+| Seed Path | `--paths` / `clues_file.paths` | 预加载到 prompt 的仓库内文件，只接受文件，不接受目录 |
 
-> **注意**：代码文件为英文，搜索关键词应为英文。当禅道条目为纯中文描述时，自动提取不会产生有效搜索关键词，请通过 `--keywords` 或 `--clues-file` 手动提供对应的英文关键词。短词（如 `CN`、`EU`）不会被自动过滤，因为它们在汽车行业中有区分意义（如 `ECALL_CN` vs `ECALL_EU`）。
+目录名、模块名或符号名应放入 `--clues`；只有明确要预加载的文件才放入 `--paths`。
 
 显式提供代码线索：
 
 ```bash
 python3 main.py --module requirement --id 5939 --analyze --repo-path . \
-  --keywords calibration,import \
-  --paths src/calib,src/config \
-  --symbols LoadCalibration,ImportConfig
+  --clues calibration,LoadCalibration,src/calib \
+  --paths src/calib/import_config.c
 ```
 
 批量分析时可使用 `--clues-file` 为不同条目指定不同线索：
@@ -299,9 +287,8 @@ python3 main.py --module requirement --id 5939 --analyze --repo-path . \
 ```json
 {
   "5939": {
-    "keywords": ["calibration", "import"],
-    "paths": ["src/calib"],
-    "symbols": ["LoadCalibration"]
+    "clues": ["calibration", "LoadCalibration", "src/calib"],
+    "paths": ["src/calib/import_config.c"]
   }
 }
 ```
@@ -310,7 +297,7 @@ python3 main.py --module requirement --id 5939 --analyze --repo-path . \
 python3 main.py --module requirement --project 3 --analyze --repo-path . --clues-file clues.json
 ```
 
-路径线索必须位于 `--repo-path` 内。越界路径不会被读取，会记录到 debug bundle 的 `rejected_clues.json`。
+Seed Path 必须是 `--repo-path` 内的文件。越界、目录或不存在的路径不会被读取，会记录到 debug bundle 的 `rejected_seed_paths.json`。
 
 ### 证据位置
 
@@ -318,12 +305,13 @@ debug bundle 默认保存证据位置文件：
 
 ```text
 code_evidence_locations.json
-rejected_clues.json
+rejected_seed_paths.json
 ```
 
 `code_evidence_locations.json` 区分：
 
-- `collected_locations`：实际喂给 Agent 的文件名和行号范围。
+- `seed_locations`：由 Seed Path 预加载给 Agent 的文件名和行号范围。
 - `cited_evidence_locations`：Agent 最终引用为结论依据的文件名和行号范围。
+- `evidence_validation_issues`：本地文件/行号校验失败的证据位置。
 
 PRD/ISSUE 文档只展示关键引用证据。完整代码内容仍只有在传入 `--debug-include-code` 时才保存。

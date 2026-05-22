@@ -21,7 +21,6 @@ def _item_to_dict(item: Any) -> Dict[str, Any]:
         "title": getattr(item, "title", ""),
         "status": getattr(item, "status", ""),
         "priority": getattr(item, "priority", ""),
-        "keywords": getattr(item, "keywords", []),
     }
 
 
@@ -108,8 +107,8 @@ class DebugBundle:
     def write_code_evidence_locations(self, items: List[Dict[str, Any]]) -> None:
         self._write_json("code_evidence_locations.json", {"items": items})
 
-    def write_rejected_clues(self, rejected_clues: List[Any]) -> None:
-        self._write_json("rejected_clues.json", rejected_clues)
+    def write_rejected_seed_paths(self, rejected_seed_paths: List[Any]) -> None:
+        self._write_json("rejected_seed_paths.json", rejected_seed_paths)
 
 
 def build_debug_bundle(enabled: bool, base_dir: str = "", module: str = "", run_id: str = "", timestamp: str = "", include_code: bool = False) -> DebugBundle:

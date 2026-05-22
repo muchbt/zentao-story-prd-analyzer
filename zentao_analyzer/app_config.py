@@ -23,10 +23,12 @@ def _int_value(value: Any, default: int) -> int:
 
 @dataclasses.dataclass
 class RuntimeConfig:
-    agent: str = "codex"
+    agent: str = ""
     model: str = ""
     agent_timeout: int = 900
     claude_command: str = "claude"
+    codex_command: str = "codex"
+    opencode_command: str = "opencode"
     claude_prompt_via: str = "stdin"
     claude_extra_args: List[str] = dataclasses.field(default_factory=list)
     verbose: bool = False
@@ -38,11 +40,16 @@ class RuntimeConfig:
     repo_path: str = "."
 
     def agent_config_dict(self) -> Dict[str, Any]:
+        command_by_agent = {
+            "claude": self.claude_command,
+            "codex": self.codex_command,
+            "opencode": self.opencode_command,
+        }
         return {
             "agent": self.agent,
             "model": self.model,
             "timeout": self.agent_timeout,
-            "command": self.claude_command,
+            "command": command_by_agent.get(self.agent, ""),
             "prompt_via": self.claude_prompt_via,
             "extra_args": list(self.claude_extra_args),
             "cwd": self.repo_path or ".",
@@ -50,9 +57,10 @@ class RuntimeConfig:
 
 
 def _detect_default_agent() -> str:
-    if shutil.which("claude"):
-        return "claude"
-    return "codex"
+    for name in ("claude", "codex", "opencode"):
+        if shutil.which(name):
+            return name
+    return ""
 
 
 def build_runtime_config(args) -> RuntimeConfig:
@@ -66,9 +74,11 @@ def build_runtime_config(args) -> RuntimeConfig:
         prompt_via = "stdin"
     return RuntimeConfig(
         agent=agent,
-        model=str(_first_non_empty(getattr(args, "model", None), os.environ.get("OPENAI_MODEL"), default="")),
+        model=str(_first_non_empty(getattr(args, "model", None), default="")),
         agent_timeout=_int_value(_first_non_empty(getattr(args, "agent_timeout", None), os.environ.get("AGENT_TIMEOUT"), default=None), 900),
         claude_command=str(_first_non_empty(getattr(args, "claude_command", None), os.environ.get("CLAUDE_COMMAND"), default="claude")),
+        codex_command=str(_first_non_empty(getattr(args, "codex_command", None), os.environ.get("CODEX_COMMAND"), default="codex")),
+        opencode_command=str(_first_non_empty(getattr(args, "opencode_command", None), os.environ.get("OPENCODE_COMMAND"), default="opencode")),
         claude_prompt_via=prompt_via,
         claude_extra_args=list(getattr(args, "claude_extra_arg", None) or []),
         verbose=bool(getattr(args, "verbose", False)),

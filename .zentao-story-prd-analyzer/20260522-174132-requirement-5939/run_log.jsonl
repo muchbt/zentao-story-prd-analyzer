@@ -1,0 +1,14 @@
+{"timestamp": "2026-05-22T17:41:32+08:00", "level": "info", "stage": "fetch_items", "event": "started", "status": "running", "module": "requirement", "item_id": "5939"}
+{"timestamp": "2026-05-22T17:41:32+08:00", "level": "info", "stage": "fetch_items", "event": "done", "status": "done", "count": 1}
+{"timestamp": "2026-05-22T17:41:32+08:00", "level": "info", "stage": "analyze", "event": "started", "status": "running", "item_id": "5939"}
+{"timestamp": "2026-05-22T17:41:32+08:00", "level": "info", "stage": "analyze", "event": "done", "status": "done", "item_id": "5939", "confidence": "高"}
+{"timestamp": "2026-05-22T17:41:32+08:00", "level": "info", "stage": "generate_docs", "event": "started", "status": "running", "item_id": "5939"}
+{"timestamp": "2026-05-22T17:41:32+08:00", "level": "info", "stage": "generate_docs", "event": "done", "status": "done", "item_id": "5939", "document_path": "/tmp/tmpeycuhric/prd/PRD-requirement-5939-Test_Title.md"}
+{"timestamp": "2026-05-22T17:41:32+08:00", "level": "info", "stage": "summary_report", "event": "written", "path": "/tmp/tmpeycuhric/summary_report.json"}
+{"timestamp": "2026-05-22T17:41:32+08:00", "level": "info", "stage": "fetch_items", "event": "started", "status": "running", "module": "requirement", "item_id": "5939"}
+{"timestamp": "2026-05-22T17:41:32+08:00", "level": "info", "stage": "fetch_items", "event": "done", "status": "done", "count": 1}
+{"timestamp": "2026-05-22T17:41:32+08:00", "level": "info", "stage": "analyze", "event": "started", "status": "running", "item_id": "5939"}
+{"timestamp": "2026-05-22T17:41:32+08:00", "level": "info", "stage": "analyze", "event": "done", "status": "done", "item_id": "5939", "confidence": "高"}
+{"timestamp": "2026-05-22T17:41:32+08:00", "level": "info", "stage": "generate_docs", "event": "started", "status": "running", "item_id": "5939"}
+{"timestamp": "2026-05-22T17:41:32+08:00", "level": "info", "stage": "generate_docs", "event": "done", "status": "done", "item_id": "5939", "document_path": "/tmp/tmpictfixml/prd/PRD-requirement-5939-Test_Title.md"}
+{"timestamp": "2026-05-22T17:41:32+08:00", "level": "info", "stage": "summary_report", "event": "written", "path": "/tmp/tmpictfixml/summary_report.json"}

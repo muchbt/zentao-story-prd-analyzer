@@ -10,7 +10,9 @@ from unittest.mock import MagicMock, patch
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import zentao_analyzer.main as main
-from zentao_analyzer.code_clues import CodeLocation, CollectionResult
+from zentao_analyzer.analysis_result import EvidenceLocation, EvidenceValidationIssue
+from zentao_analyzer.code_clues import RejectedSeedPath
+from zentao_analyzer.seed_loader import SeedLocation
 
 
 def make_item():
@@ -27,11 +29,10 @@ def make_item():
     item.assigned_to = "dev"
     item.created_by = "pm"
     item.created_date = "2026-05-20"
-    item.keywords = ["zentao"]
     return item
 
 
-def make_analysis():
+def make_analysis(seed_path="src/a.c", rejected=None):
     analysis = MagicMock()
     analysis.item_id = "5939"
     analysis.item_type = "requirement"
@@ -49,39 +50,36 @@ def make_analysis():
     analysis.output_md = "LLM 理解"
     analysis.raw_response = '{"conclusion":"完成"}'
     analysis.cited_evidence_locations = [
-        CodeLocation(path="src/a.c", line_start=1, line_end=3, reason="ok", source="agent")
+        EvidenceLocation(path="src/a.c", line_start=1, line_end=3, reason="ok", source="agent")
     ]
+    analysis.seed_locations = [
+        SeedLocation(path=seed_path, line_start=1, line_end=3)
+    ]
+    analysis.rejected_seed_paths = rejected or []
+    analysis.evidence_validation_issues = []
     analysis.is_insufficient_evidence.return_value = False
     return analysis
 
 
 class TestMainPhase5(unittest.TestCase):
-    def test_cli_clues_are_passed_and_bundle_writes_locations(self):
+    def test_cli_clues_and_seed_paths_are_passed_and_bundle_writes_seed_locations(self):
         with tempfile.TemporaryDirectory() as td:
-            os.makedirs(os.path.join(td, "src"))
-            analysis = make_analysis()
+            seed = os.path.join(td, "src", "a.c")
+            os.makedirs(os.path.dirname(seed))
+            with open(seed, "w", encoding="utf-8") as f:
+                f.write("int a;\n")
+            analysis = make_analysis(seed_path=seed)
 
             def fake_analyze(*args, **kwargs):
-                clues = kwargs["code_clues"]
-                self.assertTrue(any(c.kind == "keyword" and c.value == "cli_kw" for c in clues))
-                self.assertTrue(any(c.kind == "symbol" and c.value == "Login" for c in clues))
-                kwargs["collection_recorder"](
-                    args[0],
-                    CollectionResult(
-                        snippets=[],
-                        collected_locations=[
-                            CodeLocation(path="src/a.c", line_start=1, line_end=3, source="collector")
-                        ],
-                        rejected_clues=[],
-                    ),
-                )
+                self.assertEqual(kwargs["search_hints"], ["cli_kw", "Login"])
+                self.assertEqual(kwargs["seed_paths"], [seed])
                 return analysis
 
             argv = [
                 "zentao_analyzer.main.py", "--module", "requirement", "--id", "5939",
                 "--analyze", "--repo-path", td, "--output-root", td,
                 "--debug-bundle-dir", os.path.join(td, "debug"),
-                "--keywords", "cli_kw", "--paths", "src", "--symbols", "Login",
+                "--clues", "cli_kw,Login", "--paths", "src/a.c",
                 "--quiet",
             ]
             with patch.object(main.ZentaoClient, "get_item", return_value=make_item()):
@@ -94,19 +92,20 @@ class TestMainPhase5(unittest.TestCase):
             parsed = json.loads(stdout.getvalue())
             with open(os.path.join(parsed["debug_bundle"], "code_evidence_locations.json"), encoding="utf-8") as f:
                 evidence = json.load(f)
-            self.assertEqual(evidence["items"][0]["collected_locations"][0]["path"], "src/a.c")
+            self.assertEqual(evidence["items"][0]["seed_locations"][0]["path"], seed)
             self.assertEqual(evidence["items"][0]["cited_evidence_locations"][0]["path"], "src/a.c")
 
             with open(parsed["summary_report"], encoding="utf-8") as f:
                 summary = json.load(f)
-            self.assertEqual(summary["items"][0]["collected_location_count"], 1)
+            self.assertEqual(summary["items"][0]["seed_location_count"], 1)
             self.assertEqual(summary["items"][0]["cited_evidence_location_count"], 1)
 
-    def test_clues_file_and_rejected_path_are_recorded(self):
+    def test_clues_file_and_rejected_seed_path_are_recorded(self):
         with tempfile.TemporaryDirectory() as td:
             clues_path = os.path.join(td, "clues.json")
+            rejected = [RejectedSeedPath(value="../outside.c", source="clues_file", item_id="5939", reason="outside_repo")]
             with open(clues_path, "w", encoding="utf-8") as f:
-                json.dump({"5939": {"paths": ["../outside.c"], "keywords": ["file_kw"]}}, f)
+                json.dump({"5939": {"paths": ["../outside.c"], "clues": ["file_kw"]}}, f)
 
             argv = [
                 "zentao_analyzer.main.py", "--module", "requirement", "--id", "5939",
@@ -116,18 +115,40 @@ class TestMainPhase5(unittest.TestCase):
                 "--quiet",
             ]
             with patch.object(main.ZentaoClient, "get_item", return_value=make_item()):
-                with patch("zentao_analyzer.main.analyze", return_value=make_analysis()) as mock_analyze:
+                with patch("zentao_analyzer.main.analyze", return_value=make_analysis(rejected=rejected)) as mock_analyze:
                     with patch.object(sys, "argv", argv):
                         stdout = io.StringIO()
                         with contextlib.redirect_stdout(stdout):
                             main.main()
 
-            clues = mock_analyze.call_args.kwargs["code_clues"]
-            self.assertTrue(any(c.kind == "keyword" and c.value == "file_kw" for c in clues))
+            self.assertEqual(mock_analyze.call_args.kwargs["search_hints"], ["file_kw"])
             parsed = json.loads(stdout.getvalue())
-            with open(os.path.join(parsed["debug_bundle"], "rejected_clues.json"), encoding="utf-8") as f:
-                rejected = json.load(f)
-            self.assertEqual(rejected[0]["reason"], "outside_repo")
+            with open(os.path.join(parsed["debug_bundle"], "rejected_seed_paths.json"), encoding="utf-8") as f:
+                rejected_data = json.load(f)
+            self.assertEqual(rejected_data[0]["reason"], "outside_repo")
+
+    def test_evidence_validation_issues_are_recorded(self):
+        with tempfile.TemporaryDirectory() as td:
+            analysis = make_analysis()
+            analysis.evidence_validation_issues = [
+                EvidenceValidationIssue(path="src/a.c", line_start=99, line_end=99, reason="line_out_of_range")
+            ]
+            argv = [
+                "zentao_analyzer.main.py", "--module", "requirement", "--id", "5939",
+                "--analyze", "--repo-path", td, "--output-root", td,
+                "--debug-bundle-dir", os.path.join(td, "debug"),
+                "--quiet",
+            ]
+            with patch.object(main.ZentaoClient, "get_item", return_value=make_item()):
+                with patch("zentao_analyzer.main.analyze", return_value=analysis):
+                    with patch.object(sys, "argv", argv):
+                        stdout = io.StringIO()
+                        with contextlib.redirect_stdout(stdout):
+                            main.main()
+            parsed = json.loads(stdout.getvalue())
+            with open(os.path.join(parsed["debug_bundle"], "code_evidence_locations.json"), encoding="utf-8") as f:
+                evidence = json.load(f)
+            self.assertEqual(evidence["items"][0]["evidence_validation_issues"][0]["reason"], "line_out_of_range")
 
 
 if __name__ == "__main__":

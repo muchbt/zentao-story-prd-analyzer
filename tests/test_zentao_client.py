@@ -37,7 +37,7 @@ class TestZentaoItem(unittest.TestCase):
         self.assertEqual(item.title, "测试需求")
         self.assertEqual(item.type, "story")
         self.assertEqual(item.priority, "1")
-        self.assertIn("测试需求", item.keywords)
+        self.assertFalse(hasattr(item, "keywords"))
 
     def test_from_dict_invalid(self):
         with self.assertRaises(ZentaoFormatError):

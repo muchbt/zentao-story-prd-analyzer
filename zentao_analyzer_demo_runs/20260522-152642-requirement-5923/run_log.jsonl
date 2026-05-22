@@ -1,0 +1,7 @@
+{"timestamp": "2026-05-22T15:26:42+08:00", "level": "info", "stage": "fetch_items", "event": "started", "status": "running", "module": "requirement", "item_id": "5923"}
+{"timestamp": "2026-05-22T15:26:42+08:00", "level": "info", "stage": "fetch_items", "event": "done", "status": "done", "count": 1}
+{"timestamp": "2026-05-22T15:26:42+08:00", "level": "info", "stage": "analyze", "event": "started", "status": "running", "item_id": "5923"}
+{"timestamp": "2026-05-22T15:29:24+08:00", "level": "info", "stage": "analyze", "event": "done", "status": "done", "item_id": "5923", "confidence": "中"}
+{"timestamp": "2026-05-22T15:29:24+08:00", "level": "info", "stage": "generate_docs", "event": "started", "status": "running", "item_id": "5923"}
+{"timestamp": "2026-05-22T15:29:24+08:00", "level": "info", "stage": "generate_docs", "event": "done", "status": "done", "item_id": "5923", "document_path": "docs/prd/PRD-requirement-5923-FC_67182_L3_23R3_a_8a2_TCAM_Service_Request_Criteria_for_Assistance_Services.md"}
+{"timestamp": "2026-05-22T15:29:24+08:00", "level": "info", "stage": "summary_report", "event": "written", "path": "docs/summary_report.json"}

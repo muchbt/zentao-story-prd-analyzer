@@ -2,8 +2,28 @@ import dataclasses
 import re
 from typing import Any, Dict, List
 
-from .code_clues import CodeLocation
 from .zentao_client import ZentaoItem
+
+
+@dataclasses.dataclass
+class EvidenceLocation:
+    path: str
+    line_start: int
+    line_end: int
+    symbol: str = ""
+    reason: str = ""
+    source: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return dataclasses.asdict(self)
+
+
+@dataclasses.dataclass
+class EvidenceValidationIssue:
+    path: str
+    line_start: int = 0
+    line_end: int = 0
+    reason: str = ""
 
 
 def _safe_int(value: Any, default: int = 0) -> int:
@@ -30,13 +50,13 @@ def _format_evidence_object(data: Dict[str, Any]) -> str:
     return " ".join(part for part in parts if part).strip()
 
 
-def _location_from_evidence_object(data: Dict[str, Any]) -> CodeLocation:
+def _location_from_evidence_object(data: Dict[str, Any]) -> EvidenceLocation:
     path = str(data.get("path", "")).strip()
     line_start = _safe_int(data.get("line_start"))
     line_end = _safe_int(data.get("line_end"), line_start)
     if not path or line_start <= 0 or line_end <= 0:
         return None
-    return CodeLocation(
+    return EvidenceLocation(
         path=path,
         line_start=line_start,
         line_end=line_end,
@@ -46,7 +66,7 @@ def _location_from_evidence_object(data: Dict[str, Any]) -> CodeLocation:
     )
 
 
-def _location_from_evidence_text(text: str) -> CodeLocation:
+def _location_from_evidence_text(text: str) -> EvidenceLocation:
     match = re.search(r"(?P<path>[\w./\\-]+\.[A-Za-z0-9_]+):(?P<start>\d+)(?:-(?P<end>\d+))?", text)
     if not match:
         return None
@@ -54,7 +74,7 @@ def _location_from_evidence_text(text: str) -> CodeLocation:
     end = _safe_int(match.group("end"), start)
     if start <= 0 or end <= 0:
         return None
-    return CodeLocation(
+    return EvidenceLocation(
         path=match.group("path"),
         line_start=start,
         line_end=end,
@@ -65,7 +85,7 @@ def _location_from_evidence_text(text: str) -> CodeLocation:
 
 def parse_evidence(evidence: Any):
     evidence_text: List[str] = []
-    cited_locations: List[CodeLocation] = []
+    cited_locations: List[EvidenceLocation] = []
     if not isinstance(evidence, list):
         return evidence_text, cited_locations
     for item in evidence:
@@ -104,7 +124,10 @@ class AnalysisResult:
     error_kind: str = ""
     raw_response: str = dataclasses.field(default="", repr=False)
     evidence_text: List[str] = dataclasses.field(default_factory=list)
-    cited_evidence_locations: List[CodeLocation] = dataclasses.field(default_factory=list)
+    cited_evidence_locations: List[EvidenceLocation] = dataclasses.field(default_factory=list)
+    seed_locations: List[Any] = dataclasses.field(default_factory=list)
+    rejected_seed_paths: List[Any] = dataclasses.field(default_factory=list)
+    evidence_validation_issues: List[EvidenceValidationIssue] = dataclasses.field(default_factory=list)
 
     @classmethod
     def from_llm_json(cls, item: ZentaoItem, data: Dict[str, Any], raw_response: str = "") -> "AnalysisResult":

@@ -1,6 +1,5 @@
 import dataclasses
 import json
-import os
 import re
 import subprocess
 import time
@@ -8,15 +7,10 @@ from typing import Any, Dict, List, Optional
 
 from .run_logger import redact_sensitive
 
-try:
-    import openai
-except ImportError:
-    openai = None
-
 
 @dataclasses.dataclass
 class AgentConfig:
-    agent: str = "openai"
+    agent: str = "claude"
     model: str = ""
     timeout: int = 900
     command: str = ""
@@ -121,6 +115,8 @@ def _has_any_arg(args: List[str], names: List[str]) -> bool:
 def build_claude_command(config: AgentConfig, prompt: str):
     command = config.command or "claude"
     args = [command] + list(config.extra_args or [])
+    if config.model and "--model" not in args:
+        args.extend(["--model", config.model])
     if "--output-format" not in args:
         args.extend(["--output-format", "text"])
     if "--append-system-prompt" not in args:
@@ -149,11 +145,11 @@ class AgentClient:
         self.config = config
 
     def call(self, prompt: str) -> AgentResult:
-        agent = (self.config.agent or "openai").lower()
-        if agent in ("openai", "codex"):
-            return self._call_openai(prompt, agent)
+        agent = (self.config.agent or "claude").lower()
         if agent == "claude":
             return self._call_claude(prompt)
+        if agent == "codex":
+            return self._call_codex(prompt)
         if agent == "opencode":
             return self._call_opencode(prompt)
         return AgentResult(ok=False, error_kind="config", error=f"未识别 agent: {agent}", agent=agent, model=self.config.model)
@@ -182,34 +178,6 @@ class AgentClient:
             agent=raw_agent,
             model=model,
         )
-
-    def _call_openai(self, prompt: str, agent: str) -> AgentResult:
-        started = _now_ms()
-        model = self.config.model or os.environ.get("OPENAI_MODEL", "")
-        if openai is None:
-            return AgentResult(ok=False, error_kind="config", error=f"openai Python 模块未安装，无法使用 {agent} 后端。如果在 Claude Code 环境中运行，请使用 --agent claude；如果在 OpenCode 环境中运行，请使用 --agent opencode", agent=agent, model=model)
-        api_key = os.environ.get("OPENAI_API_KEY", "")
-        if not api_key:
-            return AgentResult(ok=False, error_kind="config", error=f"缺少 OPENAI_API_KEY，{agent} 后端需要此环境变量", agent=agent, model=model)
-        if not model:
-            return AgentResult(ok=False, error_kind="config", error=f"缺少 OPENAI_MODEL 或 --model，{agent} 后端需要指定模型名", agent=agent, model=model)
-        try:
-            openai.api_key = api_key
-            if os.environ.get("OPENAI_BASE_URL"):
-                openai.base_url = os.environ.get("OPENAI_BASE_URL")
-            response = openai.ChatCompletion.create(
-                model=model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0,
-                request_timeout=self.config.timeout,
-            )
-            text = response.choices[0].message.content
-            return self._parse_text(text or "", raw_agent=agent, model=model, duration_ms=_now_ms() - started)
-        except TimeoutError as exc:
-            return AgentResult(ok=False, error_kind="timeout", error=str(exc), duration_ms=_now_ms() - started, agent=agent, model=model)
-        except Exception as exc:
-            kind = classify_agent_error(str(exc))
-            return AgentResult(ok=False, error_kind=kind, error=redact_sensitive(str(exc)), duration_ms=_now_ms() - started, agent=agent, model=model)
 
     def _call_claude(self, prompt: str) -> AgentResult:
         started = _now_ms()
@@ -248,16 +216,62 @@ class AgentClient:
             )
         return self._parse_text(stdout.strip(), raw_agent="claude", model=self.config.model, duration_ms=_now_ms() - started)
 
-    def _call_opencode(self, prompt: str) -> AgentResult:
+    def _call_codex(self, prompt: str) -> AgentResult:
         started = _now_ms()
-        command = self.config.command or "opencode"
-        args = [command, "agent"]
-        if self.config.prompt_via == "arg":
-            args.extend(["-p", prompt])
+        command = self.config.command or "codex"
+        args = [
+            command,
+            "exec",
+            "-C",
+            self.config.cwd or ".",
+            "--dangerously-bypass-approvals-and-sandbox",
+        ] + list(self.config.extra_args or [])
+        if self.config.model:
+            args.extend(["-m", self.config.model])
         try:
             completed = subprocess.run(
                 args,
-                input=prompt if self.config.prompt_via != "arg" else None,
+                input=prompt,
+                capture_output=True,
+                text=True,
+                timeout=self.config.timeout,
+                cwd=self.config.cwd or ".",
+                shell=False,
+            )
+        except FileNotFoundError as exc:
+            return AgentResult(ok=False, error_kind="config", error=f"Codex 命令不存在: {exc}", duration_ms=_now_ms() - started, agent="codex", model=self.config.model)
+        except subprocess.TimeoutExpired as exc:
+            return AgentResult(ok=False, error_kind="timeout", error=f"Codex CLI 超时: {exc}", duration_ms=_now_ms() - started, agent="codex", model=self.config.model)
+        except Exception as exc:
+            return AgentResult(ok=False, error_kind=classify_agent_error(str(exc)), error=redact_sensitive(str(exc)), duration_ms=_now_ms() - started, agent="codex", model=self.config.model)
+
+        stdout = completed.stdout or ""
+        stderr = completed.stderr or ""
+        if completed.returncode != 0:
+            error_text = _safe_join_error(stdout, stderr)
+            return AgentResult(
+                ok=False,
+                raw_response=redact_sensitive(stdout),
+                error=error_text or f"Codex CLI 返回码 {completed.returncode}",
+                error_kind=classify_agent_error(error_text),
+                duration_ms=_now_ms() - started,
+                agent="codex",
+                model=self.config.model,
+            )
+        return self._parse_text(stdout.strip(), raw_agent="codex", model=self.config.model, duration_ms=_now_ms() - started)
+
+    def _call_opencode(self, prompt: str) -> AgentResult:
+        started = _now_ms()
+        command = self.config.command or "opencode"
+        args = [command, "run", "--dangerously-skip-permissions"]
+        if self.config.model:
+            args.extend(["--model", self.config.model])
+        args.extend(list(self.config.extra_args or []))
+        args.append(prompt)
+        try:
+            completed = subprocess.run(
+                args,
+                input=None,
                 capture_output=True,
                 text=True,
                 timeout=self.config.timeout,

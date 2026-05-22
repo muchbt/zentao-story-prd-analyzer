@@ -1,0 +1,31 @@
+[
+  {
+    "id": "5930",
+    "type": "requirement",
+    "title": "FC_665094_L3 25R1(1a3)_Ecall功能的回拨模式(CN)-TCAM ECALL  CALLBACK mode",
+    "status": "active",
+    "priority": "1",
+    "keywords": [
+      "call",
+      "TCAM",
+      "back",
+      "EA",
+      "AA",
+      "incoming",
+      "CallStatus",
+      "voice",
+      "send",
+      "service",
+      "ECALL",
+      "center",
+      "callback",
+      "CallBackMode",
+      "x",
+      "DHU",
+      "incomingCall",
+      "receive",
+      "MSD",
+      "end"
+    ]
+  }
+]

@@ -1,0 +1,157 @@
+现在我已经收集了足够的证据来进行全面分析。让我根据代码中的直接证据进行综合判断。
+
+```json
+{
+  "conclusion": "部分完成",
+  "evidence": [
+    {
+      "path": "/home/ubuntu/code/github/geea30_app/application/xcallapp/callaudio/inc/xcall_call_control.h",
+      "line_start": 38,
+      "line_end": 38,
+      "symbol": "XCALL_STATUS_INTERNAL_CALLBACK_MODE",
+      "reason": "定义了回拨模式内部状态（enum值3），是回调模式状态机的基础"
+    },
+    {
+      "path": "/home/ubuntu/code/github/geea30_app/application/xcallapp/common/inc/xcall_common.h",
+      "line_start": 96,
+      "line_end": 98,
+      "symbol": "XCALL_TIMER_ID_CALLBACK_MODE/XCALL_TIMER_ID_REPORT_CALLBACK_MODE_STATUS",
+      "reason": "定义了回调模式定时器和1s周期状态上报定时器ID"
+    },
+    {
+      "path": "/home/ubuntu/code/github/geea30_app/application/xcallapp/callaudio/src/xcall_call_control.c",
+      "line_start": 74,
+      "line_end": 74,
+      "symbol": "XCALL_CALLBACK_MODE_TIME_DEFAULT",
+      "reason": "CN版本默认回调时间为25分钟，符合需求"
+    },
+    {
+      "path": "/home/ubuntu/code/github/geea30_app/application/xcallapp/callaudio/src/xcall_call_control.c",
+      "line_start": 299,
+      "line_end": 310,
+      "symbol": "xcall_is_need_enter_callback",
+      "reason": "判断是否进入回调模式：TSP未终止服务(isStopService=FALSE)时允许进入"
+    },
+    {
+      "path": "/home/ubuntu/code/github/geea30_app/application/xcallapp/callaudio/src/xcall_call_control.c",
+      "line_start": 520,
+      "line_end": 533,
+      "symbol": "xcall_set_callback_mode_remain_time/xcall_fetch_callback_mode_remain_time",
+      "reason": "管理回调模式剩余时间，1s递减一次，支持DB持久化"
+    },
+    {
+      "path": "/home/ubuntu/code/github/geea30_app/application/xcallapp/callaudio/src/xcall_call_control.c",
+      "line_start": 1128,
+      "line_end": 1138,
+      "symbol": "xcall_start_report_callback_mode_status_timer",
+      "reason": "启动1s周期的状态上报定时器(duration=1, E_GEE_TIMER_TYPE_CIRCLE)，满足1s周期上报要求"
+    },
+    {
+      "path": "/home/ubuntu/code/github/geea30_app/application/xcallapp/callaudio/src/xcall_call_control.c",
+      "line_start": 1116,
+      "line_end": 1126,
+      "symbol": "xcall_report_callback_mode_status_timer_expired_handler",
+      "reason": "定时到期处理：检查当前状态是否为CALLBACK_MODE，调用xcall_report_callback_status上报剩余时间"
+    },
+    {
+      "path": "/home/ubuntu/code/github/geea30_app/application/xcallapp/callaudio/src/xcall_ihu_interaction.c",
+      "line_start": 107,
+      "line_end": 113,
+      "symbol": "xcall_report_callback_status",
+      "reason": "构造XCallCallbackStatus(含remainTime)，通过XCALL_EXTERN_EVENT_NOTIFY_CALLBACK_STATUS推送消息"
+    },
+    {
+      "path": "/home/ubuntu/code/github/geea30_app/application/xcallapp/callextern/src/xcall_comm_over_somip.cpp",
+      "line_start": 445,
+      "line_end": 471,
+      "symbol": "xcall_notify_callback_status_to_ihu",
+      "reason": "通过SOME/IP的AsscMgrSrv_Server_CallBackStsEvt事件上报CallBackSts剩余时间到DHU"
+    },
+    {
+      "path": "/home/ubuntu/code/github/geea30_app/application/xcallapp/callaudio/src/xcall_ihu_interaction.c",
+      "line_start": 56,
+      "line_end": 64,
+      "symbol": "xcall_send_xcall_status_message_to_ihu",
+      "reason": "回调模式(第61行)设置callbackMode=TRUE发送到IHU(DHU)，满足CallBackMode=0x01需求"
+    },
+    {
+      "path": "/home/ubuntu/code/github/geea30_app/application/xcallapp/common/inc/xcall_ext_message.h",
+      "line_start": 353,
+      "line_end": 357,
+      "symbol": "XCallStatusMessageToIHU",
+      "reason": "结构体包含BOOL callbackMode字段，用于向DHU上报CallBackMode信号"
+    },
+    {
+      "path": "/home/ubuntu/code/github/geea30_app/application/xcallapp/callaudio/src/xcall_call_control.c",
+      "line_start": 1159,
+      "line_end": 1210,
+      "symbol": "transition_internal_xcall_status_to_callback_mode",
+      "reason": "完整实现回拨模式状态切换：向IHU/ASM/RVDC发送状态、启动计时器、上报剩余时间"
+    },
+    {
+      "path": "/home/ubuntu/code/github/geea30_app/application/xcallapp/callaudio/src/xcall_call_control.c",
+      "line_start": 1077,
+      "line_end": 1114,
+      "symbol": "transition_internal_xcall_status_to_incoming_call",
+      "reason": "从回调模式到来电的转换处理(第1083-1098行)：回调期间来电可被接受并自动应答"
+    },
+    {
+      "path": "/home/ubuntu/code/github/geea30_app/application/xcallapp/callaudio/src/xcall_call_control.c",
+      "line_start": 2768,
+      "line_end": 2791,
+      "symbol": "xcall_tsp_stop_ecall_service",
+      "reason": "TSP终止服务时设置isStopService=TRUE，阻止进入回调模式(第2784行)，区分正常挂断与TSP终止"
+    },
+    {
+      "path": "/home/ubuntu/code/github/geea30_app/application/xcallapp/callaudio/src/xcall_call_control.c",
+      "line_start": 2880,
+      "line_end": 2932,
+      "symbol": "xcall_voice_call_state_indication",
+      "reason": "通话结束(GSW_VOICE_CALL_END)时的回调模式切换逻辑(第2891-2925行)：处理正常挂断和来电挂断"
+    },
+    {
+      "path": "/home/ubuntu/code/github/geea30_app/application/xcallapp/callaudio/src/xcall_call_control.c",
+      "line_start": 1861,
+      "line_end": 2000,
+      "symbol": "xcall_coldstart_check_timer_expired_handler",
+      "reason": "冷启动恢复回调模式：从DB读取剩余时间并恢复CALLBACK_MODE状态(第1971-1999行)"
+    },
+    {
+      "path": "/home/ubuntu/code/github/geea30_app/application/xcallapp/callaudio/src/xcall_call_control.c",
+      "line_start": 2469,
+      "line_end": 2495,
+      "symbol": "xcall_physical_ecall_button_event_handler",
+      "reason": "回调/来电期间收到AA触发的处理(第2478-2486行)：发送MSD并重置回调计时器"
+    }
+  ],
+  "gaps": [
+    "BCALL/ICALL业务请求在回调模式期间的忽略处理未在xcallapp核心代码中找到显式实现",
+    "回调模式下BCALL来电的拒绝处理未在通话状态机中找到显式实现（来电处理中无呼叫类型区分）",
+    "无EA/AA服务激活时所有来电拒绝逻辑未在xcallapp核心层找到显式实现"
+  ],
+  "suspected_causes": [
+    "BCALL/ICALL请求可能在更高层的ServiceManager中处理，未在xcallapp代码中体现",
+    "来电类型区分可能在模组驱动层完成，应用层仅处理ECALL相关来电"
+  ],
+  "affected_scope": [
+    "exception flow: 回调模式期间BCALL/ICALL被错误接受"
+  ],
+  "recommendations": [
+    "1. 在BCALL/ICALL触发入口处增加回调模式检查，回调模式下直接忽略",
+    "2. 在来电处理(GSW_VOICE_CALL_INCOMING)中增加回调模式下的BCALL来电检查与拒绝逻辑",
+    "3. 建议在xcall_start_ecall入口处对BCALL/ICALL增加回调模式阻断条件",
+    "4. 增加回调模式下无EA/AA服务时来电拒绝的明确实现"
+  ],
+  "verification": [
+    "1. 模拟回调模式：通话结束后检查CallBackMode=0x01上报和CallBackSts 1s周期上报",
+    "2. 回调模式中触发BCALL按键：验证BCALL业务被忽略",
+    "3. 回调模式中收到BCALL来电：验证来电被拒绝而非自动应答",
+    "4. 验证25分钟回调超时后Ecall服务正确结束",
+    "5. 验证TSP终止服务后不进入回调模式",
+    "6. 验证回调模式中收到新AA触发时正确发送MSD并重置计时器"
+  ],
+  "priority": "高",
+  "confidence": "中",
+  "output_md": ""
+}
+```

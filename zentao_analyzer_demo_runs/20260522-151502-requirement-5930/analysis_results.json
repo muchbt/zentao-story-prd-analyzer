@@ -1,0 +1,56 @@
+[
+  {
+    "item_id": "5930",
+    "item_type": "requirement",
+    "conclusion": "部分完成",
+    "evidence": [
+      "/home/ubuntu/code/github/geea30_app/application/xcallapp/callaudio/inc/xcall_call_control.h:38-38 XCALL_STATUS_INTERNAL_CALLBACK_MODE 定义了回拨模式内部状态（enum值3），是回调模式状态机的基础",
+      "/home/ubuntu/code/github/geea30_app/application/xcallapp/common/inc/xcall_common.h:96-98 XCALL_TIMER_ID_CALLBACK_MODE/XCALL_TIMER_ID_REPORT_CALLBACK_MODE_STATUS 定义了回调模式定时器和1s周期状态上报定时器ID",
+      "/home/ubuntu/code/github/geea30_app/application/xcallapp/callaudio/src/xcall_call_control.c:74-74 XCALL_CALLBACK_MODE_TIME_DEFAULT CN版本默认回调时间为25分钟，符合需求",
+      "/home/ubuntu/code/github/geea30_app/application/xcallapp/callaudio/src/xcall_call_control.c:299-310 xcall_is_need_enter_callback 判断是否进入回调模式：TSP未终止服务(isStopService=FALSE)时允许进入",
+      "/home/ubuntu/code/github/geea30_app/application/xcallapp/callaudio/src/xcall_call_control.c:520-533 xcall_set_callback_mode_remain_time/xcall_fetch_callback_mode_remain_time 管理回调模式剩余时间，1s递减一次，支持DB持久化",
+      "/home/ubuntu/code/github/geea30_app/application/xcallapp/callaudio/src/xcall_call_control.c:1128-1138 xcall_start_report_callback_mode_status_timer 启动1s周期的状态上报定时器(duration=1, E_GEE_TIMER_TYPE_CIRCLE)，满足1s周期上报要求",
+      "/home/ubuntu/code/github/geea30_app/application/xcallapp/callaudio/src/xcall_call_control.c:1116-1126 xcall_report_callback_mode_status_timer_expired_handler 定时到期处理：检查当前状态是否为CALLBACK_MODE，调用xcall_report_callback_status上报剩余时间",
+      "/home/ubuntu/code/github/geea30_app/application/xcallapp/callaudio/src/xcall_ihu_interaction.c:107-113 xcall_report_callback_status 构造XCallCallbackStatus(含remainTime)，通过XCALL_EXTERN_EVENT_NOTIFY_CALLBACK_STATUS推送消息",
+      "/home/ubuntu/code/github/geea30_app/application/xcallapp/callextern/src/xcall_comm_over_somip.cpp:445-471 xcall_notify_callback_status_to_ihu 通过SOME/IP的AsscMgrSrv_Server_CallBackStsEvt事件上报CallBackSts剩余时间到DHU",
+      "/home/ubuntu/code/github/geea30_app/application/xcallapp/callaudio/src/xcall_ihu_interaction.c:56-64 xcall_send_xcall_status_message_to_ihu 回调模式(第61行)设置callbackMode=TRUE发送到IHU(DHU)，满足CallBackMode=0x01需求",
+      "/home/ubuntu/code/github/geea30_app/application/xcallapp/common/inc/xcall_ext_message.h:353-357 XCallStatusMessageToIHU 结构体包含BOOL callbackMode字段，用于向DHU上报CallBackMode信号",
+      "/home/ubuntu/code/github/geea30_app/application/xcallapp/callaudio/src/xcall_call_control.c:1159-1210 transition_internal_xcall_status_to_callback_mode 完整实现回拨模式状态切换：向IHU/ASM/RVDC发送状态、启动计时器、上报剩余时间",
+      "/home/ubuntu/code/github/geea30_app/application/xcallapp/callaudio/src/xcall_call_control.c:1077-1114 transition_internal_xcall_status_to_incoming_call 从回调模式到来电的转换处理(第1083-1098行)：回调期间来电可被接受并自动应答",
+      "/home/ubuntu/code/github/geea30_app/application/xcallapp/callaudio/src/xcall_call_control.c:2768-2791 xcall_tsp_stop_ecall_service TSP终止服务时设置isStopService=TRUE，阻止进入回调模式(第2784行)，区分正常挂断与TSP终止",
+      "/home/ubuntu/code/github/geea30_app/application/xcallapp/callaudio/src/xcall_call_control.c:2880-2932 xcall_voice_call_state_indication 通话结束(GSW_VOICE_CALL_END)时的回调模式切换逻辑(第2891-2925行)：处理正常挂断和来电挂断",
+      "/home/ubuntu/code/github/geea30_app/application/xcallapp/callaudio/src/xcall_call_control.c:1861-2000 xcall_coldstart_check_timer_expired_handler 冷启动恢复回调模式：从DB读取剩余时间并恢复CALLBACK_MODE状态(第1971-1999行)",
+      "/home/ubuntu/code/github/geea30_app/application/xcallapp/callaudio/src/xcall_call_control.c:2469-2495 xcall_physical_ecall_button_event_handler 回调/来电期间收到AA触发的处理(第2478-2486行)：发送MSD并重置回调计时器"
+    ],
+    "gaps": [
+      "BCALL/ICALL业务请求在回调模式期间的忽略处理未在xcallapp核心代码中找到显式实现",
+      "回调模式下BCALL来电的拒绝处理未在通话状态机中找到显式实现（来电处理中无呼叫类型区分）",
+      "无EA/AA服务激活时所有来电拒绝逻辑未在xcallapp核心层找到显式实现"
+    ],
+    "suspected_causes": [
+      "BCALL/ICALL请求可能在更高层的ServiceManager中处理，未在xcallapp代码中体现",
+      "来电类型区分可能在模组驱动层完成，应用层仅处理ECALL相关来电"
+    ],
+    "affected_scope": [
+      "exception flow: 回调模式期间BCALL/ICALL被错误接受"
+    ],
+    "recommendations": [
+      "1. 在BCALL/ICALL触发入口处增加回调模式检查，回调模式下直接忽略",
+      "2. 在来电处理(GSW_VOICE_CALL_INCOMING)中增加回调模式下的BCALL来电检查与拒绝逻辑",
+      "3. 建议在xcall_start_ecall入口处对BCALL/ICALL增加回调模式阻断条件",
+      "4. 增加回调模式下无EA/AA服务时来电拒绝的明确实现"
+    ],
+    "verification": [
+      "1. 模拟回调模式：通话结束后检查CallBackMode=0x01上报和CallBackSts 1s周期上报",
+      "2. 回调模式中触发BCALL按键：验证BCALL业务被忽略",
+      "3. 回调模式中收到BCALL来电：验证来电被拒绝而非自动应答",
+      "4. 验证25分钟回调超时后Ecall服务正确结束",
+      "5. 验证TSP终止服务后不进入回调模式",
+      "6. 验证回调模式中收到新AA触发时正确发送MSD并重置计时器"
+    ],
+    "priority": "高",
+    "confidence": "中",
+    "error": "",
+    "error_kind": ""
+  }
+]

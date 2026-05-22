@@ -2,28 +2,18 @@ import argparse
 import dataclasses
 import json
 import os
-import subprocess
 import sys
 
 from .agent_client import AgentConfig
 from .analyzer import analyze
 from .app_config import build_runtime_config
-from .code_clues import build_item_clues, load_clues_file
+from .code_clues import build_search_hints, build_seed_paths, load_clues_file
 from .debug_bundle import build_debug_bundle
 from .document_generator import generate_document
 from .run_logger import RunLogger
 from .summary_report import build_summary_item, write_summary_report
 from .writeback import prepare_writeback_status
 from .zentao_client import ZentaoClient, ZentaoError
-
-
-def get_modified_files(repo_path, last_commit=None):
-    if last_commit:
-        cmd = ["git", "-C", repo_path, "diff", "--name-only", f"{last_commit}...HEAD"]
-    else:
-        cmd = ["git", "-C", repo_path, "ls-files"]
-    result = subprocess.run(cmd, shell=False, capture_output=True, text=True)
-    return result.stdout.strip().split("\n")
 
 
 def _plain_locations(locations):
@@ -34,6 +24,12 @@ def _plain_locations(locations):
         elif isinstance(location, dict):
             result.append(location)
     return result
+
+
+def _plain_value(value, default=""):
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return default
 
 
 def main():
@@ -56,10 +52,12 @@ def main():
     parser.add_argument("--output", help="阶段一结果输出 JSON 文件路径（默认 stdout）")
     parser.add_argument("--analyze", action="store_true", help="获取数据后继续执行代码分析和 PRD 生成")
     parser.add_argument("--repo-path", default=os.environ.get("REPO_PATH", "."), help="代码仓库路径")
-    parser.add_argument("--agent", default=os.environ.get("LLM_AGENT", "codex"), help="LLM Agent")
-    parser.add_argument("--model", help="LLM 模型名，OpenAI/Codex 使用")
+    parser.add_argument("--agent", default=os.environ.get("LLM_AGENT"), help="LLM Agent")
+    parser.add_argument("--model", help="LLM 模型名，显式指定时传给所选 Agent CLI")
     parser.add_argument("--agent-timeout", type=int, help="Agent 调用超时时间，单位秒")
     parser.add_argument("--claude-command", help="Claude CLI 命令，默认 claude")
+    parser.add_argument("--codex-command", help="Codex CLI 命令，默认 codex")
+    parser.add_argument("--opencode-command", help="OpenCode CLI 命令，默认 opencode")
     parser.add_argument("--claude-prompt-via", choices=["stdin", "arg"], help="Claude prompt 传递方式")
     parser.add_argument("--claude-extra-arg", action="append", help="额外 Claude CLI 参数，可重复")
     parser.add_argument("--verbose", action="store_true", help="输出详细运行日志到 stderr")
@@ -68,12 +66,9 @@ def main():
     parser.add_argument("--no-debug-bundle", action="store_true", help="关闭默认 debug bundle")
     parser.add_argument("--debug-bundle-dir", help="debug bundle 输出目录")
     parser.add_argument("--debug-include-code", action="store_true", help="debug bundle 保存代码上下文快照")
-    parser.add_argument("--keywords", help="额外代码关键词线索，逗号分隔")
-    parser.add_argument("--paths", help="额外代码路径线索，逗号分隔，必须位于 repo-path 内")
-    parser.add_argument("--symbols", help="额外函数/类/符号线索，逗号分隔")
+    parser.add_argument("--clues", help="搜索建议，逗号分隔，写入 Agent prompt")
+    parser.add_argument("--paths", help="种子文件路径，逗号分隔，必须是 repo-path 内文件")
     parser.add_argument("--clues-file", help="按禅道条目 ID 提供代码线索的 JSON 文件")
-    parser.add_argument("--incremental", action="store_true", help="增量分析")
-    parser.add_argument("--last-commit", default=os.environ.get("LAST_COMMIT"), help="增量分析起始 commit")
     parser.add_argument("--output-root", default="docs", help="PRD/ISSUE 文档输出根目录")
     args = parser.parse_args()
 
@@ -147,7 +142,6 @@ def main():
                 "assigned_to": item.assigned_to,
                 "created_by": item.created_by,
                 "created_date": item.created_date,
-                "keywords": item.keywords,
             }
             for item in items
         ],
@@ -163,8 +157,6 @@ def main():
         return 0
 
     repo_path = args.repo_path
-    incremental = args.incremental
-    last_commit = args.last_commit if incremental else None
     output_root = args.output_root
 
     run_id = args.id or args.project or args.product or "list"
@@ -183,38 +175,29 @@ def main():
         "runtime_config": runtime_config.__dict__,
         "environment": {
             "LLM_AGENT": os.environ.get("LLM_AGENT", ""),
-            "OPENAI_MODEL": os.environ.get("OPENAI_MODEL", ""),
-            "OPENAI_API_KEY": os.environ.get("OPENAI_API_KEY", ""),
             "CLAUDE_COMMAND": os.environ.get("CLAUDE_COMMAND", ""),
+            "CODEX_COMMAND": os.environ.get("CODEX_COMMAND", ""),
+            "OPENCODE_COMMAND": os.environ.get("OPENCODE_COMMAND", ""),
             "CLAUDE_PROMPT_VIA": os.environ.get("CLAUDE_PROMPT_VIA", ""),
             "ZENTAO_TOKEN": os.environ.get("ZENTAO_TOKEN", ""),
         },
     })
     debug_bundle.write_items(items)
 
-    modified_files = get_modified_files(repo_path, last_commit) if incremental else None
-
     scan_summary = {
         "repo_path": repo_path,
-        "incremental": incremental,
-        "last_commit": last_commit or "",
-        "modified_files": modified_files or [],
-        "modified_file_count": len(modified_files or []),
-        "max_files": 50,
-        "max_lines_per_file": 200,
-        "max_total_tokens": 8000,
+        "max_seed_files": 3,
+        "max_lines_per_seed": 50,
+        "max_seed_tokens": 2000,
     }
     debug_bundle.write_scan_summary(scan_summary)
     debug_bundle.write_code_context({
         "repo_path": repo_path,
-        "items": [{"id": item.id, "keywords": item.keywords} for item in items],
-        "modified_files": modified_files or [],
+        "items": [{"id": item.id} for item in items],
     })
 
     agent_config = AgentConfig(**runtime_config.agent_config_dict())
     clues_by_item = load_clues_file(args.clues_file) if args.clues_file else {}
-    collection_by_item = {}
-    rejected_clues_by_item = {}
 
     def record_debug(kind, item, payload):
         if kind == "prompt":
@@ -222,41 +205,28 @@ def main():
         elif kind == "response":
             debug_bundle.write_response(item.id, payload or f"[无响应内容] item={item.id}")
 
-    def record_collection(item, collection_result):
-        collection_by_item[item.id] = collection_result
-        if getattr(collection_result, "rejected_clues", None):
-            rejected_clues_by_item.setdefault(item.id, []).extend(collection_result.rejected_clues)
-
     analysis_results = []
     documents = []
     summary_items = []
     evidence_location_items = []
-    all_rejected_clues = []
+    all_rejected_seed_paths = []
     writeback = prepare_writeback_status()
 
     for item in items:
-        code_clues, rejected_clues = build_item_clues(
-            item,
-            repo_path=repo_path,
-            cli_keywords=args.keywords,
-            cli_paths=args.paths,
-            cli_symbols=args.symbols,
-            clues_by_item=clues_by_item,
-        )
-        if rejected_clues:
-            rejected_clues_by_item.setdefault(item.id, []).extend(rejected_clues)
-            all_rejected_clues.extend(rejected_clues)
+        search_hints = build_search_hints(item.id, cli_clues=args.clues, clues_by_item=clues_by_item)
+        seed_paths, rejected_seed_paths = build_seed_paths(item.id, repo_path=repo_path, cli_paths=args.paths, clues_by_item=clues_by_item)
+        all_rejected_seed_paths.extend(rejected_seed_paths)
 
         logger.info("analyze", "started", status="running", item_id=item.id)
         result = analyze(
             item,
             repo_path=repo_path,
             agent=runtime_config.agent,
-            modified_files=modified_files,
             agent_config=agent_config,
             debug_recorder=record_debug,
-            code_clues=code_clues,
-            collection_recorder=record_collection,
+            seed_paths=seed_paths,
+            search_hints=search_hints,
+            rejected_seed_paths=rejected_seed_paths,
         )
         logger.info("analyze", "done", status="done", item_id=item.id, confidence=result.confidence)
         if result.error and result.error_kind == "timeout":
@@ -267,16 +237,18 @@ def main():
             if args.quiet:
                 retry_cmd += " --quiet"
             print(f"  {retry_cmd}", file=sys.stderr)
-        collection_result = collection_by_item.get(item.id)
-        collected_locations = getattr(collection_result, "collected_locations", []) if collection_result else []
-        collection_rejected = getattr(collection_result, "rejected_clues", []) if collection_result else []
-        if collection_rejected:
-            all_rejected_clues.extend(collection_rejected)
+        seed_locations = getattr(result, "seed_locations", []) or []
+        result_rejected = getattr(result, "rejected_seed_paths", []) or []
+        for rejected in result_rejected:
+            if rejected not in all_rejected_seed_paths:
+                all_rejected_seed_paths.append(rejected)
         cited_locations = getattr(result, "cited_evidence_locations", []) or []
+        validation_issues = getattr(result, "evidence_validation_issues", []) or []
         evidence_location_items.append({
             "item_id": item.id,
-            "collected_locations": _plain_locations(collected_locations),
+            "seed_locations": _plain_locations(seed_locations),
             "cited_evidence_locations": _plain_locations(cited_locations),
+            "evidence_validation_issues": _plain_locations(validation_issues),
         })
         analysis_results.append({
             "item_id": result.item_id,
@@ -291,7 +263,7 @@ def main():
             "priority": result.priority,
             "confidence": result.confidence,
             "error": result.error,
-            "error_kind": result.error_kind,
+            "error_kind": _plain_value(getattr(result, "error_kind", ""), ""),
         })
 
         logger.info("generate_docs", "started", status="running", item_id=item.id)
@@ -310,8 +282,9 @@ def main():
                 result,
                 doc,
                 writeback,
-                collected_location_count=len(collected_locations),
-                rejected_clue_count=len(rejected_clues_by_item.get(item.id, [])),
+                seed_location_count=len(seed_locations),
+                rejected_seed_path_count=len(result_rejected),
+                invalid_evidence_count=len(validation_issues),
                 debug_bundle=debug_bundle.path if debug_bundle.enabled and not debug_bundle.error else "",
             )
         )
@@ -323,7 +296,7 @@ def main():
     debug_bundle.write_documents(documents)
     debug_bundle.write_summary_path(summary_path)
     debug_bundle.write_code_evidence_locations(evidence_location_items)
-    debug_bundle.write_rejected_clues(all_rejected_clues)
+    debug_bundle.write_rejected_seed_paths(all_rejected_seed_paths)
 
     combined_output = {
         **base_result,

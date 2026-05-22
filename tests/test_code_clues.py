@@ -7,12 +7,12 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from zentao_analyzer.code_clues import (
-    CodeClue,
+    RejectedSeedPath,
+    build_search_hints,
+    build_seed_paths,
     load_clues_file,
     parse_csv_values,
-    build_item_clues,
 )
-from zentao_analyzer.zentao_client import ZentaoItem
 
 
 class TestCodeClues(unittest.TestCase):
@@ -21,49 +21,71 @@ class TestCodeClues(unittest.TestCase):
         self.assertEqual(parse_csv_values(["a,b", "c"]), ["a", "b", "c"])
         self.assertEqual(parse_csv_values(None), [])
 
-    def test_load_clues_file(self):
+    def test_load_clues_file_uses_new_format_only(self):
         with tempfile.TemporaryDirectory() as td:
             path = os.path.join(td, "clues.json")
             with open(path, "w", encoding="utf-8") as f:
-                json.dump({"5939": {"keywords": ["login"], "paths": ["src"], "symbols": ["Auth"]}}, f)
+                json.dump(
+                    {
+                        "5939": {
+                            "clues": ["callback", "ecall"],
+                            "paths": ["src/a.c"],
+                            "keywords": ["legacy"],
+                            "symbols": ["LegacySymbol"],
+                        }
+                    },
+                    f,
+                )
             data = load_clues_file(path)
-        self.assertEqual(data["5939"]["keywords"], ["login"])
+        self.assertEqual(data["5939"]["clues"], ["callback", "ecall"])
+        self.assertEqual(data["5939"]["paths"], ["src/a.c"])
+        self.assertNotIn("keywords", data["5939"])
+        self.assertNotIn("symbols", data["5939"])
 
-    def test_build_item_clues_merges_sources(self):
+    def test_build_search_hints_merges_cli_and_file(self):
+        hints = build_search_hints(
+            "5939",
+            cli_clues="cli_kw, Login",
+            clues_by_item={"5939": {"clues": ["file_kw", "Login"]}},
+        )
+        self.assertEqual(hints, ["cli_kw", "Login", "file_kw"])
+
+    def test_build_seed_paths_accepts_repo_files_only(self):
         with tempfile.TemporaryDirectory() as td:
-            os.makedirs(os.path.join(td, "src"))
-            item = ZentaoItem(id="5939", type="story", title="T", keywords=["zentao_kw"])
-            clues, rejected = build_item_clues(
-                item,
+            src = os.path.join(td, "src")
+            os.makedirs(src)
+            file_path = os.path.join(src, "a.c")
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write("int a;\n")
+
+            paths, rejected = build_seed_paths(
+                "5939",
                 repo_path=td,
-                cli_keywords=["cli_kw"],
-                cli_paths=["src"],
-                cli_symbols=["CliSymbol"],
-                clues_by_item={"5939": {"keywords": ["file_kw"], "symbols": ["FileSymbol"]}},
+                cli_paths=["src/a.c", "src", "missing.c", os.path.join(td, "..", "outside.c")],
             )
-        self.assertEqual(rejected, [])
-        triples = {(c.kind, c.value, c.source) for c in clues}
-        self.assertIn(("keyword", "zentao_kw", "zentao"), triples)
-        self.assertIn(("keyword", "cli_kw", "cli"), triples)
-        self.assertIn(("symbol", "CliSymbol", "cli"), triples)
-        self.assertIn(("keyword", "file_kw", "clues_file"), triples)
-        self.assertIn(("symbol", "FileSymbol", "clues_file"), triples)
-        self.assertTrue(any(c.kind == "path" and c.source == "cli" for c in clues))
 
-    def test_path_outside_repo_is_rejected(self):
-        with tempfile.TemporaryDirectory() as td:
-            outside = os.path.abspath(os.path.join(td, "..", "outside.c"))
-            item = ZentaoItem(id="1", type="bug", title="B")
-            clues, rejected = build_item_clues(item, repo_path=td, cli_paths=[outside])
-        self.assertFalse([c for c in clues if c.kind == "path"])
-        self.assertEqual(len(rejected), 1)
-        self.assertEqual(rejected[0].reason, "outside_repo")
+        self.assertEqual(paths, [file_path])
+        self.assertEqual(
+            [(item.value, item.reason) for item in rejected],
+            [("src", "not_file"), ("missing.c", "not_found"), (os.path.join(td, "..", "outside.c"), "outside_repo")],
+        )
+        self.assertTrue(all(isinstance(item, RejectedSeedPath) for item in rejected))
 
-    def test_limits_drop_extra_values(self):
-        item = ZentaoItem(id="1", type="story", title="T", keywords=["x" * 200])
-        clues, rejected = build_item_clues(item, repo_path=".", cli_keywords=["a"] * 101)
-        self.assertLessEqual(len([c for c in clues if c.kind == "keyword"]), 100)
-        self.assertFalse(any(c.value == "x" * 200 for c in clues))
+    def test_build_seed_paths_rejects_symlink_to_outside_repo(self):
+        with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as outside_dir:
+            outside_file = os.path.join(outside_dir, "secret.txt")
+            with open(outside_file, "w", encoding="utf-8") as f:
+                f.write("secret\n")
+            link_path = os.path.join(td, "linked.txt")
+            try:
+                os.symlink(outside_file, link_path)
+            except (AttributeError, NotImplementedError, OSError) as exc:
+                self.skipTest(f"symlink is not available: {exc}")
+
+            paths, rejected = build_seed_paths("5939", repo_path=td, cli_paths=["linked.txt"])
+
+        self.assertEqual(paths, [])
+        self.assertEqual([(item.value, item.reason) for item in rejected], [("linked.txt", "outside_repo")])
 
 
 if __name__ == "__main__":
