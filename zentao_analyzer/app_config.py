@@ -1,5 +1,6 @@
 import dataclasses
 import os
+import shutil
 from typing import Any, Dict, List
 
 
@@ -24,7 +25,7 @@ def _int_value(value: Any, default: int) -> int:
 class RuntimeConfig:
     agent: str = "codex"
     model: str = ""
-    agent_timeout: int = 120
+    agent_timeout: int = 900
     claude_command: str = "claude"
     claude_prompt_via: str = "stdin"
     claude_extra_args: List[str] = dataclasses.field(default_factory=list)
@@ -48,15 +49,25 @@ class RuntimeConfig:
         }
 
 
+def _detect_default_agent() -> str:
+    if shutil.which("claude"):
+        return "claude"
+    return "codex"
+
+
 def build_runtime_config(args) -> RuntimeConfig:
-    agent = str(_first_non_empty(getattr(args, "agent", None), os.environ.get("LLM_AGENT"), default="codex")).lower()
+    agent_arg = _first_non_empty(getattr(args, "agent", None), os.environ.get("LLM_AGENT"), default="")
+    if agent_arg:
+        agent = str(agent_arg).lower()
+    else:
+        agent = _detect_default_agent()
     prompt_via = str(_first_non_empty(getattr(args, "claude_prompt_via", None), os.environ.get("CLAUDE_PROMPT_VIA"), default="stdin")).lower()
     if prompt_via not in ("stdin", "arg"):
         prompt_via = "stdin"
     return RuntimeConfig(
         agent=agent,
         model=str(_first_non_empty(getattr(args, "model", None), os.environ.get("OPENAI_MODEL"), default="")),
-        agent_timeout=_int_value(_first_non_empty(getattr(args, "agent_timeout", None), os.environ.get("AGENT_TIMEOUT"), default=None), 120),
+        agent_timeout=_int_value(_first_non_empty(getattr(args, "agent_timeout", None), os.environ.get("AGENT_TIMEOUT"), default=None), 900),
         claude_command=str(_first_non_empty(getattr(args, "claude_command", None), os.environ.get("CLAUDE_COMMAND"), default="claude")),
         claude_prompt_via=prompt_via,
         claude_extra_args=list(getattr(args, "claude_extra_arg", None) or []),

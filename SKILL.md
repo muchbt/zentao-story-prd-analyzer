@@ -34,6 +34,8 @@ Before running the analyzer:
 
    ```bash
    python3 <ANALYZER_DIR>/main.py --help
+   # Or equivalently:
+   # cd <ANALYZER_DIR> && python3 -m zentao_analyzer.main --help
    ```
 
 3. Verify `zentao` CLI is available inside the same sandbox/session:
@@ -44,7 +46,21 @@ Before running the analyzer:
 
 4. Verify Zentao authentication is available inside the sandbox/session. Do not assume host login state is visible.
 
-   Prefer one of:
+   Check authentication status first:
+
+   ```bash
+   # Check current profile (shows logged-in user with * marker)
+   zentao profile
+
+   # Verify token is still valid (returns user info or auth error)
+   zentao user --format json --machine-readable
+   ```
+
+   If `zentao user` returns `code: 1004` or "Token 已失效", the session is expired and the user must re-login.
+
+   Do not use `zentao whoami` — this command does not exist.
+
+   Alternatively, set authentication via environment variables:
 
    ```bash
    export ZENTAO_CONFIG_FILE="$HOME/.config/zentao/zentao.json"
@@ -55,7 +71,12 @@ Before running the analyzer:
    export ZENTAO_TOKEN="<token>"
    ```
 
-5. If using OpenAI/Codex backend, ensure `OPENAI_API_KEY` and `OPENAI_MODEL` are set. If using Claude backend, ensure `claude` CLI is available.
+5. The `--agent` parameter selects the LLM backend. **It must match the host Agent CLI environment** — do not hardcode or guess. Detect as follows:
+   - If the host is **Claude Code** (claude CLI): use `--agent claude`
+   - If the host is **OpenCode**: use `--agent opencode`
+   - If the host is **Codex** or a custom OpenAI-compatible endpoint: use `--agent codex` with `OPENAI_API_KEY` and `OPENAI_MODEL` set
+   - If unsure, check the `LLM_AGENT` environment variable. If not set, default to `claude` when `claude` CLI is available, otherwise `codex`.
+   Never use `--agent codex` when running inside Claude Code — it will fail with "openai 模块未安装".
 
 Never print tokens, passwords, API keys, Authorization headers, or full login commands containing secrets in final user-facing output.
 
@@ -64,6 +85,7 @@ Never print tokens, passwords, API keys, Authorization headers, or full login co
 - Default to full analysis with `--analyze`.
 - Default `--repo-path` to the Target Repository current working directory.
 - Run the command with the Target Repository as the process working directory, while calling `<ANALYZER_DIR>/main.py` by absolute path.
+- Always set `--agent-timeout 900` (15 minutes) or higher. LLM analysis typically takes 3–10 minutes. Shorter timeouts cause incomplete results. If a timeout occurs, the analyzer prints a retry command with doubled timeout; use it.
 - Do not parse or fabricate Zentao item content outside the analyzer. If fetching fails, stop and report the failure.
 - Do not use `--module issue`; ISSUE is an output document type. Use real Zentao modules such as `story`, `requirement`, `bug`, `task`, `ticket`, or `feedback`.
 - Add `--quiet` when stdout should remain machine-readable JSON.
@@ -79,6 +101,7 @@ python3 <ANALYZER_DIR>/main.py \
   --id <zentao_id> \
   --analyze \
   --repo-path <target_repo> \
+  --agent-timeout 900 \
   --quiet
 ```
 
@@ -90,6 +113,7 @@ python3 <ANALYZER_DIR>/main.py \
   --id <zentao_id> \
   --analyze \
   --repo-path <target_repo> \
+  --agent-timeout 900 \
   --quiet
 ```
 
@@ -104,6 +128,7 @@ python3 <ANALYZER_DIR>/main.py \
   --keywords "keyword1,keyword2" \
   --paths "src/module,include/module" \
   --symbols "FunctionName,ClassName" \
+  --agent-timeout 900 \
   --quiet
 ```
 
@@ -117,6 +142,7 @@ python3 <ANALYZER_DIR>/main.py \
   --limit 10 \
   --analyze \
   --repo-path <target_repo> \
+  --agent-timeout 900 \
   --quiet
 ```
 
@@ -129,6 +155,7 @@ python3 <ANALYZER_DIR>/main.py \
   --analyze \
   --repo-path <target_repo> \
   --agent claude \
+  --agent-timeout 900 \
   --quiet
 ```
 
@@ -142,6 +169,7 @@ python3 <ANALYZER_DIR>/main.py \
   --repo-path <target_repo> \
   --agent codex \
   --model "$OPENAI_MODEL" \
+  --agent-timeout 900 \
   --quiet
 ```
 
@@ -149,7 +177,20 @@ python3 <ANALYZER_DIR>/main.py \
 
 If `zentao` is missing, tell the user the sandbox/session needs `zentao` CLI in `PATH`.
 
-If authentication fails, tell the user to provide a readable `ZENTAO_CONFIG_FILE` or sandbox-visible `ZENTAO_SERVER` plus `ZENTAO_TOKEN` / `ZENTAO_USER` / `ZENTAO_PASSWORD`.
+If authentication fails (exit code 2, or stderr contains "Token 已失效"/"认证失败"/"未登录"/"auth"/"unauthorized"):
+
+1. Read `ZENTAO_SERVER` from the environment or extract the server URL from the error context.
+2. Prompt the user with a clear message and login command template:
+   > 禅道认证失败（Token 已失效或未登录）。请在终端手动登录后继续：
+   > `! zentao login -s <server_url> -u <username> -p <password>`
+   >
+   > 登录成功后，我将重新执行分析。
+   Replace `<server_url>` with the actual `ZENTAO_SERVER` value if available; otherwise leave as a placeholder.
+3. Wait for the user to confirm successful login.
+4. Retry the original analysis command (same invocation, without `--login` flags — the zentao CLI stores the session after login).
+5. If the retry also fails with an auth error, report the full error and stop — do not retry again.
+
+Do not store, log, or echo the user's password or token. Do not hardcode server URLs.
 
 If network access to Zentao is blocked, report that the analyzer cannot fetch the Zentao Item from inside the current Agent CLI environment.
 

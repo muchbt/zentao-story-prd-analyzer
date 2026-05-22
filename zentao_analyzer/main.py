@@ -123,10 +123,12 @@ def main():
         err_msg = str(e)
         if any(k in err_msg for k in ("Token 已失效", "token", "登录", "login", "认证", "auth")):
             print(f"[错误] 获取禅道数据失败: {err_msg}", file=sys.stderr)
-            print("[提示] 这可能是由于 token 失效或未登录。请尝试添加 --login 参数，或提供 --server + --user + --password 重新登录。", file=sys.stderr)
+            print("[提示] Token 已失效或未登录。请在终端执行命令登录后重试：", file=sys.stderr)
+            print("  zentao login -s <服务地址> -u <用户名> -p <密码>", file=sys.stderr)
+            print("  或在当前命令中添加 --login / --server / --user / --password 参数", file=sys.stderr)
         else:
             print(f"[错误] 获取禅道数据失败: {err_msg}", file=sys.stderr)
-        return 1
+        return 2  # AUTH_ERROR
 
     base_result = {
         "module": args.module,
@@ -218,7 +220,7 @@ def main():
         if kind == "prompt":
             debug_bundle.write_prompt(item.id, payload)
         elif kind == "response":
-            debug_bundle.write_response(item.id, payload)
+            debug_bundle.write_response(item.id, payload or f"[无响应内容] item={item.id}")
 
     def record_collection(item, collection_result):
         collection_by_item[item.id] = collection_result
@@ -257,6 +259,14 @@ def main():
             collection_recorder=record_collection,
         )
         logger.info("analyze", "done", status="done", item_id=item.id, confidence=result.confidence)
+        if result.error and result.error_kind == "timeout":
+            current_timeout = runtime_config.agent_timeout
+            suggested_timeout = current_timeout * 2
+            print(f"[提示] LLM 分析超时（当前超时 {current_timeout} 秒）。可尝试延长超时时间重试：", file=sys.stderr)
+            retry_cmd = f"python3 main.py --module {args.module} --id {item.id} --analyze --repo-path {repo_path} --agent {runtime_config.agent} --agent-timeout {suggested_timeout}"
+            if args.quiet:
+                retry_cmd += " --quiet"
+            print(f"  {retry_cmd}", file=sys.stderr)
         collection_result = collection_by_item.get(item.id)
         collected_locations = getattr(collection_result, "collected_locations", []) if collection_result else []
         collection_rejected = getattr(collection_result, "rejected_clues", []) if collection_result else []
@@ -281,6 +291,7 @@ def main():
             "priority": result.priority,
             "confidence": result.confidence,
             "error": result.error,
+            "error_kind": result.error_kind,
         })
 
         logger.info("generate_docs", "started", status="running", item_id=item.id)

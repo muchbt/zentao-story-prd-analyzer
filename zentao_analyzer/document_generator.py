@@ -3,6 +3,8 @@ import os
 import re
 from typing import Optional
 
+import re
+
 from .zentao_client import ZentaoItem
 from .analysis_result import AnalysisResult
 
@@ -43,6 +45,16 @@ def _document_type_from_item_type(item_type: str) -> str:
     return "ISSUE"
 
 
+def _split_evidence(text: str) -> str:
+    if not text:
+        return "无"
+    parts = re.split(r'[；;。]', text)
+    lines = [p.strip() for p in parts if p.strip()]
+    if not lines:
+        return text
+    return "\n".join(f"- {line}" for line in lines)
+
+
 def _build_llm_summary(analysis: AnalysisResult) -> str:
     """构建 LLM 理解摘要"""
     if analysis.output_md:
@@ -58,7 +70,7 @@ def _build_llm_summary(analysis: AnalysisResult) -> str:
     if analysis.conclusion:
         parts.append(f"结论：{analysis.conclusion}")
     if analysis.evidence:
-        parts.append(f"证据：{'; '.join(analysis.evidence)}")
+        parts.append(f"证据：\n{_split_evidence('; '.join(analysis.evidence))}")
     if analysis.gaps:
         parts.append(f"未实现：{'; '.join(analysis.gaps)}")
     if analysis.suspected_causes:
@@ -70,7 +82,7 @@ def _build_llm_summary(analysis: AnalysisResult) -> str:
     if analysis.verification:
         parts.append(f"验证：{'; '.join(analysis.verification)}")
 
-    return "\n".join(parts) if parts else "未提供 LLM 分析摘要。"
+    return "\n\n".join(parts) if parts else "未提供 LLM 分析摘要。"
 
 
 def _unknown_type_notice(item_type: str) -> str:

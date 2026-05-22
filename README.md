@@ -40,7 +40,18 @@ python3 main.py --module requirement --id 5939 --analyze --repo-path . \
 运行前需要满足以下前置条件：
 
 - `zentao` CLI 已安装，并可在 `PATH` 中直接调用。
-- 已通过 `zentao login` 完成登录，或已配置 `ZENTAO_SERVER` 与 `ZENTAO_TOKEN` / `ZENTAO_USER` / `ZENTAO_PASSWORD`。
+- 已通过 `zentao login` 完成登录，或已配置 `ZENTAO_SERVER` 与 `ZENTAO_TOKEN` / `ZENTAO_USER` / `ZENTAO_PASSWORD`。如果 Token 失效，程序会以 exit code 2 退出并提示登录命令，登录后重试即可。
+- 可通过以下命令检查认证状态：
+
+  ```bash
+  # 查看当前 profile（* 标记为活跃会话）
+  zentao profile
+
+  # 验证 token 是否有效（返回用户信息或认证错误）
+  zentao user --format json --machine-readable
+  ```
+
+  如果 `zentao user` 返回 `code: 1004` 或 "Token 已失效"，需要重新登录。注意 `zentao whoami` 命令不存在，请勿使用。
 - 使用 OpenAI/Codex 后端时已配置 `OPENAI_API_KEY` 和 `OPENAI_MODEL`。
 - 使用 Claude 后端时本机可执行 `claude` CLI。
 - `--repo-path` 指向当前运行环境可访问的代码仓库。
@@ -84,6 +95,7 @@ run:
 
 - 禅道 CLI: https://www.zentao.net/book/zentaopms/2377.html
 - 禅道 SKILL: https://www.zentao.net/book/zentaopms/2315.html
+- Token 消耗模型: [`docs/TOKEN_COST.md`](docs/TOKEN_COST.md)（第一版，随分析方案演进需更新）
 
 ---
 
@@ -163,18 +175,52 @@ python3 main.py --module story --project 3 --analyze --repo-path ./my-repo
 - 当网络超时时，会提示超时信息。
 - 所有日志和异常信息均已对敏感字段做脱敏处理。
 
+### 认证失败恢复
+
+当 Token 失效或未登录导致认证失败时（exit code 2，或 stderr 包含 `Token 已失效`/`认证失败`/`未登录`/`auth`/`unauthorized`），按以下步骤恢复：
+
+1. 从环境变量 `ZENTAO_SERVER` 获取服务地址，或从错误上下文中提取。
+2. 在终端手动执行登录命令：
+   ```bash
+   zentao login -s <服务地址> -u <用户名> -p <密码>
+   ```
+   或使用 token：
+   ```bash
+   zentao login -s <服务地址> -t <token>
+   ```
+3. 登录成功后，重新执行原来的分析命令（无需再加 `--login` 参数，zentao CLI 会保存登录态）。
+4. 如果重试仍然认证失败，报告完整错误信息并停止，不再重试。
+
+> **注意**：不要在日志、输出或调试信息中记录密码或 Token。不要硬编码服务地址。
+
 ---
 
 ## 阶段四：Agent、日志与 Debug Bundle
 
 ### Agent 选择
 
+`--agent` 参数选择 LLM 后端，**应与宿主 Agent CLI 环境一致**：
+
+| 宿主环境 | `--agent` 参数 | 说明 |
+|----------|--------------|------|
+| Claude Code | `claude` | 调用本机 `claude` CLI |
+| OpenCode | `opencode` | 调用本机 `opencode agent` |
+| Codex / 自定义 OpenAI | `codex` | 需要 `OPENAI_API_KEY` + `OPENAI_MODEL` |
+
+如果未指定 `--agent` 且未设置 `LLM_AGENT` 环境变量，程序会自动检测：本机有 `claude` 命令则默认 `claude`，否则默认 `codex`。
+
 ```bash
-python3 main.py --module requirement --id 5939 --analyze --repo-path . --agent openai --model "$OPENAI_MODEL"
-python3 main.py --module requirement --id 5939 --analyze --repo-path . --agent codex --model "$OPENAI_MODEL"
+# Claude Code 环境（推荐）
 python3 main.py --module requirement --id 5939 --analyze --repo-path . --agent claude
+
+# OpenCode 环境
 python3 main.py --module requirement --id 5939 --analyze --repo-path . --agent opencode
+
+# Codex / OpenAI 环境
+python3 main.py --module requirement --id 5939 --analyze --repo-path . --agent codex --model "$OPENAI_MODEL"
 ```
+
+> **不要在 Claude Code 环境中使用 `--agent codex`**，否则会报 "openai 模块未安装" 错误。
 
 `openai` 和 `codex` 使用 OpenAI SDK 后端。需要设置：
 
@@ -191,7 +237,7 @@ python3 main.py --module requirement --id 5939 --analyze --repo-path . --agent c
 python3 main.py --module requirement --id 5939 --analyze --repo-path . --agent claude --claude-command claude --claude-prompt-via arg
 ```
 
-`opencode` 是预留接口，当前返回 `not_implemented`，不会伪造成功。
+`opencode` 调用本机 `opencode agent` 命令，通过 stdin 传入 prompt。
 
 ### 日志
 
@@ -210,13 +256,13 @@ python3 main.py --module requirement --id 5939 --analyze --log-file logs/run.jso
 `--analyze` 时 debug bundle 默认开启，默认写入：
 
 ```text
-debug_runs/{timestamp}-{module}-{id_or_project}/
+.zentao-story-prd-analyzer/{timestamp}-{module}-{id_or_project}/
 ```
 
 其中包含脱敏配置、禅道条目摘要、扫描摘要、prompt、Agent response、分析结果、文档路径、summary 路径和本次 JSONL 日志引用。默认不保存完整代码片段。
 
 ```bash
-python3 main.py --module requirement --id 5939 --analyze --debug-bundle-dir debug_runs
+python3 main.py --module requirement --id 5939 --analyze --debug-bundle-dir .zentao-story-prd-analyzer
 python3 main.py --module requirement --id 5939 --analyze --no-debug-bundle
 python3 main.py --module requirement --id 5939 --analyze --debug-include-code
 ```
@@ -229,7 +275,17 @@ Debug bundle 会默认脱敏，但仍可能包含业务上下文、prompt 和模
 
 ### 代码线索
 
-除了从禅道标题和描述中自动抽取关键词，用户也可以显式提供代码线索：
+代码搜索关键词有三个来源，优先级从低到高：
+
+| 来源 | 参数 | 说明 |
+|------|------|------|
+| **自动提取** | 内置 | 从禅道条目的标题和描述中提取英文词，按词频取 Top 20；标题中的词权重 ×3；过滤英文停用词（如 the/is/are 等）；**中文内容不生成搜索关键词** |
+| **CLI 参数** | `--keywords` `--paths` `--symbols` | 逗号分隔，直接作为搜索线索 |
+| **线索文件** | `--clues-file` | JSON 文件，按条目 ID 指定关键词/路径/符号 |
+
+> **注意**：代码文件为英文，搜索关键词应为英文。当禅道条目为纯中文描述时，自动提取不会产生有效搜索关键词，请通过 `--keywords` 或 `--clues-file` 手动提供对应的英文关键词。短词（如 `CN`、`EU`）不会被自动过滤，因为它们在汽车行业中有区分意义（如 `ECALL_CN` vs `ECALL_EU`）。
+
+显式提供代码线索：
 
 ```bash
 python3 main.py --module requirement --id 5939 --analyze --repo-path . \

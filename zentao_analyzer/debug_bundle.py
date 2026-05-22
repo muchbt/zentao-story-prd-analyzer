@@ -116,6 +116,6 @@ def build_debug_bundle(enabled: bool, base_dir: str = "", module: str = "", run_
     if not enabled:
         return DebugBundle(enabled=False, include_code=include_code)
     stamp = timestamp or datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    root = base_dir or "debug_runs"
+    root = base_dir or ".zentao-story-prd-analyzer"
     path = os.path.join(root, f"{_safe_part(stamp)}-{_safe_part(module)}-{_safe_part(run_id)}")
     return DebugBundle(enabled=True, path=path, include_code=include_code)

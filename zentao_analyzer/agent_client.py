@@ -18,7 +18,7 @@ except ImportError:
 class AgentConfig:
     agent: str = "openai"
     model: str = ""
-    timeout: int = 120
+    timeout: int = 900
     command: str = ""
     prompt_via: str = "stdin"
     extra_args: List[str] = dataclasses.field(default_factory=list)
@@ -155,7 +155,7 @@ class AgentClient:
         if agent == "claude":
             return self._call_claude(prompt)
         if agent == "opencode":
-            return AgentResult(ok=False, error_kind="not_implemented", error="OpenCode 适配尚未实现", agent=agent, model=self.config.model)
+            return self._call_opencode(prompt)
         return AgentResult(ok=False, error_kind="config", error=f"未识别 agent: {agent}", agent=agent, model=self.config.model)
 
     def _parse_text(self, text: str, raw_agent: str, model: str, duration_ms: int = 0) -> AgentResult:
@@ -187,12 +187,12 @@ class AgentClient:
         started = _now_ms()
         model = self.config.model or os.environ.get("OPENAI_MODEL", "")
         if openai is None:
-            return AgentResult(ok=False, error_kind="config", error="openai 模块未安装", agent=agent, model=model)
+            return AgentResult(ok=False, error_kind="config", error=f"openai Python 模块未安装，无法使用 {agent} 后端。如果在 Claude Code 环境中运行，请使用 --agent claude；如果在 OpenCode 环境中运行，请使用 --agent opencode", agent=agent, model=model)
         api_key = os.environ.get("OPENAI_API_KEY", "")
         if not api_key:
-            return AgentResult(ok=False, error_kind="config", error="缺少 OPENAI_API_KEY", agent=agent, model=model)
+            return AgentResult(ok=False, error_kind="config", error=f"缺少 OPENAI_API_KEY，{agent} 后端需要此环境变量", agent=agent, model=model)
         if not model:
-            return AgentResult(ok=False, error_kind="config", error="缺少 OPENAI_MODEL 或 --model", agent=agent, model=model)
+            return AgentResult(ok=False, error_kind="config", error=f"缺少 OPENAI_MODEL 或 --model，{agent} 后端需要指定模型名", agent=agent, model=model)
         try:
             openai.api_key = api_key
             if os.environ.get("OPENAI_BASE_URL"):
@@ -247,3 +247,41 @@ class AgentClient:
                 model=self.config.model,
             )
         return self._parse_text(stdout.strip(), raw_agent="claude", model=self.config.model, duration_ms=_now_ms() - started)
+
+    def _call_opencode(self, prompt: str) -> AgentResult:
+        started = _now_ms()
+        command = self.config.command or "opencode"
+        args = [command, "agent"]
+        if self.config.prompt_via == "arg":
+            args.extend(["-p", prompt])
+        try:
+            completed = subprocess.run(
+                args,
+                input=prompt if self.config.prompt_via != "arg" else None,
+                capture_output=True,
+                text=True,
+                timeout=self.config.timeout,
+                cwd=self.config.cwd or ".",
+                shell=False,
+            )
+        except FileNotFoundError as exc:
+            return AgentResult(ok=False, error_kind="config", error=f"opencode 命令不存在: {exc}", duration_ms=_now_ms() - started, agent="opencode", model=self.config.model)
+        except subprocess.TimeoutExpired as exc:
+            return AgentResult(ok=False, error_kind="timeout", error=f"opencode agent 超时: {exc}", duration_ms=_now_ms() - started, agent="opencode", model=self.config.model)
+        except Exception as exc:
+            return AgentResult(ok=False, error_kind=classify_agent_error(str(exc)), error=redact_sensitive(str(exc)), duration_ms=_now_ms() - started, agent="opencode", model=self.config.model)
+
+        stdout = completed.stdout or ""
+        stderr = completed.stderr or ""
+        if completed.returncode != 0:
+            error_text = _safe_join_error(stdout, stderr)
+            return AgentResult(
+                ok=False,
+                raw_response=redact_sensitive(stdout),
+                error=error_text or f"opencode agent 返回码 {completed.returncode}",
+                error_kind=classify_agent_error(error_text),
+                duration_ms=_now_ms() - started,
+                agent="opencode",
+                model=self.config.model,
+            )
+        return self._parse_text(stdout.strip(), raw_agent="opencode", model=self.config.model, duration_ms=_now_ms() - started)

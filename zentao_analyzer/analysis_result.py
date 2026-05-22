@@ -101,6 +101,7 @@ class AnalysisResult:
     confidence: str = ""
     output_md: str = ""
     error: str = ""
+    error_kind: str = ""
     raw_response: str = dataclasses.field(default="", repr=False)
     evidence_text: List[str] = dataclasses.field(default_factory=list)
     cited_evidence_locations: List[CodeLocation] = dataclasses.field(default_factory=list)
@@ -130,13 +131,14 @@ class AnalysisResult:
         )
 
     @classmethod
-    def from_error(cls, item: ZentaoItem, error: str, raw_response: str = "") -> "AnalysisResult":
+    def from_error(cls, item: ZentaoItem, error: str, raw_response: str = "", error_kind: str = "") -> "AnalysisResult":
         return cls(
             item_id=item.id,
             item_type=item.type,
             item_title=item.title,
             conclusion="无法判断" if item.type in ("story", "requirement") else "无法定位",
             error=error,
+            error_kind=error_kind,
             raw_response=raw_response,
         )
 

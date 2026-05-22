@@ -62,7 +62,7 @@ def analyze(
         debug_recorder("response", item, llm_data.get("raw", ""))
 
     if "error" in llm_data:
-        return AnalysisResult.from_error(item, llm_data["error"], raw_response=llm_data.get("raw", ""))
+        return AnalysisResult.from_error(item, llm_data["error"], raw_response=llm_data.get("raw", ""), error_kind=llm_data.get("error_kind", ""))
 
     result = AnalysisResult.from_llm_json(item, llm_data, raw_response=llm_data.get("raw", ""))
 
