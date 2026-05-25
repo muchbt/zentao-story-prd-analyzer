@@ -134,6 +134,20 @@ AgentClient 对模型文本执行 JSON 解析：
 4. 若仍失败，返回 `ok=false`、`error_kind="parse"`，并保留脱敏 raw response。
 
 `analyzer` 收到失败结果后，应转换为 `AnalysisResult.from_error()`，阶段三继续生成诊断文档。
+解析失败不得由分析器自动发起修复重试，也不得由宿主 Agent 绕过分析器直接生成分析结论。调用方应向用户说明结构化响应解析失败，并提示由用户决定是否重新执行分析。
+
+当某个条目的 `error_kind="parse"` 时，Analyzer CLI 还必须：
+
+- 在该条目的 `analysis[]` 结果中提供 `retryable=true` 与 `retry_reason="agent_response_parse_failed"`。
+- 在最终 JSON 顶层提供聚合字段 `has_retryable_failure=true`；无可重试失败时为 `false`。
+- 在 stderr 输出简短提示，说明 Agent 响应解析失败，并给出由用户选择是否重新执行的重试命令。
+- 批量分析中，仅为每个解析失败条目给出带 `--id <item_id>` 的单条重试命令，不建议重新执行整个批次或重做成功条目。
+- 重试命令应复用本次调用的 analyzer CLI 入口路径，形成可直接执行的脱敏条目级命令；保留 `--module`、失败条目 `--id`、`--analyze`、`--repo-path`、`--agent`、`--agent-timeout`、`--quiet`、代码线索与输出目录等非敏感分析参数。
+- 重试命令不得输出 `--token`、`--password`、`--user`、`--login`、`--server`、`--use-env` 或任何经脱敏规则判定为敏感的参数值。
+- 单条重试命令保留 `--output-root` 以更新主文档输出位置，但不得继承原运行的 `--output`，避免以单条结果覆盖批量或显式保存的组合 JSON。
+- 不自动执行该命令。
+- 用户明确选择重试后，新的运行沿用现有输出策略：该条目的 PRD/ISSUE 与 summary 可由最新结果覆盖；前一次解析失败的原始响应和诊断产物通过旧 Debug Bundle 保留用于追溯。
+- 解析失败已经产生诊断文档、summary 和 Debug Bundle 时，CLI 仍以 exit code `0` 结束；调用方通过条目级可重试字段和顶层聚合字段区分完整分析与可重试诊断结果。
 
 ---
 
@@ -379,6 +393,8 @@ CLI：
    - `debug_bundle`
    - `debug_bundle_error`
    - `log_file`
+   - `analysis[]` 对可重试解析失败提供 `retryable` 和 `retry_reason`
+   - 顶层提供 `has_retryable_failure`
 
 stdout 必须保持单个可解析 JSON 对象，不被日志污染。
 
@@ -394,7 +410,12 @@ stdout 必须保持单个可解析 JSON 对象，不被日志污染。
 | Claude 命令不存在 | `error_kind="config"` |
 | Claude 超时 | 杀掉进程，`error_kind="timeout"` |
 | Claude 返回非零 | 分类为 auth/network/runtime |
-| Claude 输出非 JSON | JSON 解析兜底，失败则 `parse` |
+| Claude 输出非 JSON 或 JSON 格式损坏 | JSON 解析兜底，失败则 `parse`；提示用户决定是否重新执行，不自动重试或接管分析 |
+| 批量分析中部分条目为 `parse` | 保留其余条目结果；只提示按失败条目 ID 分别重试 |
+| 输出重试命令 | 仅打印脱敏后的条目级可执行命令；不回显认证参数或敏感值 |
+| 原运行包含 `--output` | 单条重试命令不继承该参数；保留 `--output-root` |
+| 用户确认重试且新运行成功 | 使用最新 PRD/ISSUE 与 summary 覆盖主输出；历史失败证据保留在原 Debug Bundle |
+| 解析失败但诊断输出已生成 | 保持 exit code `0`；由 `retryable` / `has_retryable_failure` 表达需人工选择重试 |
 | OpenCode | `not_implemented` |
 | 日志写入失败 | stderr 警告，不影响主流程 |
 | debug bundle 写入失败 | 不影响主流程，最终 JSON 标记 `debug_bundle_error` |
@@ -411,7 +432,7 @@ stdout 必须保持单个可解析 JSON 对象，不被日志污染。
 | `tests/test_run_logger.py` | quiet、verbose、JSONL、脱敏 |
 | `tests/test_debug_bundle.py` | 默认创建、关闭、指定目录、默认不保存代码、include-code、脱敏 |
 | `tests/test_app_config.py` | CLI/env 合并、默认值、兼容旧 `LLM_AGENT` |
-| `tests/test_main_phase4.py` | CLI 参数映射、最终 JSON 包含 debug bundle、stdout 单 JSON |
+| `tests/test_main_phase4.py` | CLI 参数映射、最终 JSON 包含 debug bundle、解析失败可重试提示、stdout 单 JSON |
 | `tests/test_llm_client.py` | 确认兼容层委托 AgentClient |
 
 测试原则：
@@ -465,6 +486,12 @@ README 需要新增：
 - [ ] OpenCode 返回 `not_implemented`，不伪造成功。
 - [ ] 所有 Agent 调用失败都返回结构化 `AgentResult`。
 - [ ] LLM 非 JSON 输出不会导致主流程崩溃。
+- [ ] LLM JSON 解析失败时条目结果标记可重试，stderr 只提示用户选择重试，不自动再次调用 Agent。
+- [ ] 批量分析中部分条目解析失败时，仅为失败条目提示 `--id` 重试命令，不要求重跑成功条目。
+- [ ] stderr 中的重试命令保留非敏感分析上下文，且不泄露认证参数或敏感值。
+- [ ] 原运行指定 `--output` 时，单条重试提示不会覆盖其组合 JSON 输出文件。
+- [ ] 用户手动重试成功后更新主文档与 summary，同时原失败 Debug Bundle 仍可复核。
+- [ ] 解析失败且诊断输出已成功生成时进程返回 `0`，机器可读结果明确标识可重试状态。
 - [ ] 默认创建 debug bundle。
 - [ ] `--no-debug-bundle` 可关闭 debug bundle。
 - [ ] `--debug-include-code` 才保存代码上下文快照。

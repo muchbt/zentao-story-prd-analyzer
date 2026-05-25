@@ -2,6 +2,7 @@ import argparse
 import dataclasses
 import json
 import os
+import shlex
 import sys
 
 from .agent_client import AgentConfig
@@ -10,7 +11,7 @@ from .app_config import build_runtime_config
 from .code_clues import build_search_hints, build_seed_paths, load_clues_file
 from .debug_bundle import build_debug_bundle
 from .document_generator import generate_document, validate_document_consistency
-from .run_logger import RunLogger
+from .run_logger import RunLogger, redact_sensitive
 from .summary_report import build_summary_item, write_summary_report
 from .writeback import prepare_writeback_status
 from .zentao_client import ZentaoClient, ZentaoError
@@ -30,6 +31,42 @@ def _plain_value(value, default=""):
     if isinstance(value, (str, int, float, bool)) or value is None:
         return value
     return default
+
+
+def _append_option(command, flag, value):
+    if value is not None and value != "":
+        command.extend([flag, str(value)])
+
+
+def _build_parse_retry_command(args, runtime_config, item_id):
+    command = [
+        "python3",
+        sys.argv[0] or "main.py",
+        "--module",
+        str(args.module),
+        "--id",
+        str(item_id),
+        "--analyze",
+        "--repo-path",
+        str(runtime_config.repo_path),
+    ]
+    _append_option(command, "--agent", runtime_config.agent)
+    _append_option(command, "--model", runtime_config.model)
+    _append_option(command, "--agent-timeout", runtime_config.agent_timeout)
+    _append_option(command, "--output-root", args.output_root)
+    _append_option(command, "--clues", args.clues)
+    _append_option(command, "--paths", args.paths)
+    _append_option(command, "--clues-file", args.clues_file)
+    _append_option(command, "--debug-bundle-dir", args.debug_bundle_dir)
+    if args.quiet:
+        command.append("--quiet")
+    if args.verbose:
+        command.append("--verbose")
+    if args.no_debug_bundle:
+        command.append("--no-debug-bundle")
+    if args.debug_include_code:
+        command.append("--debug-include-code")
+    return redact_sensitive(shlex.join(command))
 
 
 def main():
@@ -229,13 +266,19 @@ def main():
             rejected_seed_paths=rejected_seed_paths,
         )
         logger.info("analyze", "done", status="done", item_id=item.id, confidence=result.confidence)
-        if result.error and result.error_kind == "timeout":
+        error_kind = _plain_value(getattr(result, "error_kind", ""), "")
+        retryable = error_kind == "parse"
+        if result.error and error_kind == "timeout":
             current_timeout = runtime_config.agent_timeout
             suggested_timeout = current_timeout * 2
             print(f"[提示] LLM 分析超时（当前超时 {current_timeout} 秒）。可尝试延长超时时间重试：", file=sys.stderr)
             retry_cmd = f"python3 main.py --module {args.module} --id {item.id} --analyze --repo-path {repo_path} --agent {runtime_config.agent} --agent-timeout {suggested_timeout}"
             if args.quiet:
                 retry_cmd += " --quiet"
+            print(f"  {retry_cmd}", file=sys.stderr)
+        if retryable:
+            retry_cmd = _build_parse_retry_command(args, runtime_config, item.id)
+            print(f"[提示] 条目 {item.id} 的 Agent 响应无法解析为结构化结果。未自动重试；请确认后再执行：", file=sys.stderr)
             print(f"  {retry_cmd}", file=sys.stderr)
         seed_locations = getattr(result, "seed_locations", []) or []
         result_rejected = getattr(result, "rejected_seed_paths", []) or []
@@ -264,7 +307,9 @@ def main():
             "confidence": result.confidence,
             "understanding_summary": _plain_value(getattr(result, "understanding_summary", ""), ""),
             "error": result.error,
-            "error_kind": _plain_value(getattr(result, "error_kind", ""), ""),
+            "error_kind": error_kind,
+            "retryable": retryable,
+            "retry_reason": "agent_response_parse_failed" if retryable else "",
         })
 
         logger.info("generate_docs", "started", status="running", item_id=item.id)
@@ -317,6 +362,7 @@ def main():
         "debug_bundle": debug_bundle.path if debug_bundle.enabled and not debug_bundle.error else "",
         "debug_bundle_error": debug_bundle.error,
         "log_file": runtime_config.log_file,
+        "has_retryable_failure": any(item["retryable"] for item in analysis_results),
     }
 
     if args.output:

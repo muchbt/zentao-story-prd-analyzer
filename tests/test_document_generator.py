@@ -39,6 +39,8 @@ class TestDocumentGenerator(unittest.TestCase):
             self.assertIn("## LLM 理解摘要", content)
             self.assertIn("部分完成", content)
             self.assertIn("## 关键代码证据", content)
+            self.assertIn("无可定位代码证据", content)
+            self.assertIn("- src/auth.py: login exists", content)
             self.assertIn("## 追踪信息", content)
             self.assertIn("回写禅道: not_implemented", content)
 
@@ -68,6 +70,7 @@ class TestDocumentGenerator(unittest.TestCase):
             self.assertIn("## 来源信息", content)
             self.assertIn("## 可能根因", content)
             self.assertIn("## 关键代码证据", content)
+            self.assertEqual(content.count("src/auth.py"), 1)
             self.assertIn("## 追踪信息", content)
             self.assertIn("回写禅道: not_implemented", content)
 
@@ -79,16 +82,21 @@ class TestDocumentGenerator(unittest.TestCase):
                 item_type="story",
                 item_title="证据",
                 conclusion="完成",
-                evidence=["src/a.c:12-40 Login 支持结论"],
+                evidence=["src/a.c:12-40 Login 支持结论", "src/b.c:2-3 Logout 支持退出"],
                 confidence="高",
                 cited_evidence_locations=[
-                    EvidenceLocation(path="src/a.c", line_start=12, line_end=40, symbol="Login", reason="支持结论", source="agent")
+                    EvidenceLocation(path="src/a.c", line_start=12, line_end=40, symbol="Login", reason="支持结论", source="agent"),
+                    EvidenceLocation(path="src/b.c", line_start=2, line_end=3, symbol="Logout", reason="支持退出", source="agent"),
                 ],
             )
             doc = generate_document(item, analysis, output_root=td)
             with open(doc.document_path, encoding="utf-8") as f:
                 content = f.read()
             self.assertIn("| src/a.c | 12-40 | Login | 支持结论 |", content)
+            self.assertIn("| src/b.c | 2-3 | Logout | 支持退出 |", content)
+            self.assertNotIn("补充说明：", content)
+            self.assertNotIn("## 实现证据", content)
+            self.assertNotIn("## 已实现的核心功能", content)
             self.assertEqual(validate_document_consistency(analysis, doc), [])
 
     def test_document_uses_understanding_summary_without_repeating_analysis(self):
@@ -150,6 +158,8 @@ class TestDocumentGenerator(unittest.TestCase):
             self.assertIn("# PRD: T", content)
             self.assertIn("> 诊断文档：当前条目未能生成完整 PRD。", content)
             self.assertIn("LLM 调用失败", content)
+            self.assertIn("无可定位代码证据；当前无法验证实现状态。", content)
+            self.assertIn("无法确定是否存在缺口", content)
             self.assertIn("## 追踪信息", content)
             self.assertIn("回写禅道: not_implemented", content)
 

@@ -114,7 +114,13 @@ python3 <ANALYZER_DIR>/main.py \
 
 ## Failure Handling
 
-If `zentao` is missing or authentication fails, report the analyzer error and stop. If LLM/Agent execution fails, report the analyzer error and point to the debug bundle path if one was created. Never invent Zentao content, code evidence, completion status, defect cause, PRD, or ISSUE output.
+If `zentao` is missing or authentication fails, report the analyzer error and stop.
+
+If LLM/Agent execution fails, report the analyzer error and point to the debug bundle path if one was created. If an `analysis[]` item marks a failure as `retryable: true` with `retry_reason: "agent_response_parse_failed"`, state that the Agent returned an unparseable structured response for that Zentao Item and ask the user whether to rerun the analyzer command. Do not rerun automatically. In batch analysis, offer the analyzer's item-specific `--id <zentao_id>` retry command only for failed items; do not suggest rerunning successfully analyzed items. Present only the analyzer-provided redacted retry command; never reconstruct credential, login, or other sensitive parameters in host output. An item-specific rerun must not reuse a previous combined-output `--output` file path. `has_retryable_failure` is the top-level shortcut for detecting whether such items exist.
+
+After an analyzer failure, do not fetch the Zentao Item independently, inspect the Target Repository independently, or produce a replacement analysis/PRD/ISSUE in the host Agent. Never invent or substitute Zentao content, code evidence, completion status, defect cause, PRD, or ISSUE output.
+
+If the user explicitly confirms a rerun and it succeeds, treat the latest generated PRD/ISSUE and summary as the primary output. The earlier failure remains reviewable through its Debug Bundle.
 
 ## Output Interpretation
 
@@ -125,3 +131,5 @@ The analyzer prints final JSON to stdout unless `--output` is provided. Importan
 - `documents`: generated PRD/ISSUE Markdown paths.
 - `summary_report`: machine-readable summary path.
 - `debug_bundle`: diagnostic bundle path.
+- `analysis[].retryable` / `analysis[].retry_reason`: whether an item's failed analysis can be retried by explicit user choice and why.
+- `has_retryable_failure`: whether any analyzed item has such a retryable failure.

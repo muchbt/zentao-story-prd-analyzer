@@ -44,6 +44,7 @@ def make_analysis():
     analysis.priority = "高"
     analysis.confidence = "高"
     analysis.error = ""
+    analysis.error_kind = ""
     analysis.raw_response = '{"conclusion":"完成"}'
     analysis.cited_evidence_locations = []
     analysis.seed_locations = []
@@ -180,6 +181,83 @@ class TestMainPhase4(unittest.TestCase):
             with open(run_log, encoding="utf-8") as f:
                 lines = [json.loads(line) for line in f if line.strip()]
             self.assertTrue(any(line["stage"] == "fetch_items" for line in lines))
+
+    def test_parse_failure_is_retryable_and_prints_safe_item_retry_command(self):
+        with tempfile.TemporaryDirectory() as td:
+            item = make_item()
+            analysis = make_analysis()
+            analysis.conclusion = "无法判断"
+            analysis.error = "LLM 返回非 JSON"
+            analysis.error_kind = "parse"
+            analysis.confidence = ""
+            output_path = os.path.join(td, "combined.json")
+            argv = [
+                "zentao_analyzer.main.py", "--module", "requirement", "--id", "5939",
+                "--analyze", "--repo-path", td, "--output-root", td,
+                "--output", output_path,
+                "--agent", "claude", "--agent-timeout", "5", "--quiet",
+                "--token", "private-token", "--user", "private-user", "--password", "private-password",
+                "--clues", "callback,token=clue-secret", "--paths", "src/ecall.c",
+            ]
+            with patch.object(main.ZentaoClient, "get_item", return_value=item):
+                with patch("zentao_analyzer.main.analyze", return_value=analysis):
+                    with patch.object(sys, "argv", argv):
+                        stderr = io.StringIO()
+                        with contextlib.redirect_stderr(stderr):
+                            code = main.main()
+            self.assertEqual(code, 0)
+            with open(output_path, encoding="utf-8") as f:
+                parsed = json.load(f)
+            self.assertTrue(parsed["analysis"][0]["retryable"])
+            self.assertEqual(parsed["analysis"][0]["retry_reason"], "agent_response_parse_failed")
+            self.assertTrue(parsed["has_retryable_failure"])
+            message = stderr.getvalue()
+            self.assertIn("条目 5939", message)
+            self.assertIn("python3 zentao_analyzer.main.py", message)
+            self.assertIn("--id 5939", message)
+            self.assertIn("--output-root", message)
+            self.assertIn("--clues", message)
+            self.assertIn("--paths", message)
+            self.assertNotIn("--output", message.replace("--output-root", ""))
+            self.assertNotIn("--token", message)
+            self.assertNotIn("private-token", message)
+            self.assertNotIn("--user", message)
+            self.assertNotIn("private-user", message)
+            self.assertNotIn("--password", message)
+            self.assertNotIn("private-password", message)
+            self.assertNotIn("clue-secret", message)
+
+    def test_batch_parse_failure_marks_only_failed_item_as_retryable(self):
+        with tempfile.TemporaryDirectory() as td:
+            succeeded_item = make_item()
+            failed_item = make_item()
+            failed_item.id = "5940"
+            succeeded_analysis = make_analysis()
+            failed_analysis = make_analysis()
+            failed_analysis.item_id = "5940"
+            failed_analysis.error = "LLM 返回非 JSON"
+            failed_analysis.error_kind = "parse"
+            failed_analysis.conclusion = "无法判断"
+            argv = [
+                "zentao_analyzer.main.py", "--module", "requirement", "--project", "3",
+                "--analyze", "--repo-path", td, "--output-root", td, "--quiet",
+            ]
+            with patch.object(main.ZentaoClient, "list_items", return_value=[succeeded_item, failed_item]):
+                with patch("zentao_analyzer.main.analyze", side_effect=[succeeded_analysis, failed_analysis]):
+                    with patch.object(sys, "argv", argv):
+                        stdout = io.StringIO()
+                        stderr = io.StringIO()
+                        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                            code = main.main()
+            self.assertEqual(code, 0)
+            parsed = json.loads(stdout.getvalue())
+            self.assertFalse(parsed["analysis"][0]["retryable"])
+            self.assertEqual(parsed["analysis"][0]["retry_reason"], "")
+            self.assertTrue(parsed["analysis"][1]["retryable"])
+            self.assertEqual(parsed["analysis"][1]["retry_reason"], "agent_response_parse_failed")
+            self.assertTrue(parsed["has_retryable_failure"])
+            self.assertIn("--id 5940", stderr.getvalue())
+            self.assertNotIn("--id 5939", stderr.getvalue())
 
 
 if __name__ == "__main__":

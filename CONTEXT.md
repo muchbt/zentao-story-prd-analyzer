@@ -32,6 +32,10 @@ _Avoid_: Raw Zentao data, fetched item
 A natural-language restatement of what the Agent understood the Zentao Item to require or report before evaluating code evidence.
 _Avoid_: Analysis Result, Code Evidence, recommendation list
 
+**Supplemental Requirement Context**:
+User-provided expected-behavior information supplied for an analysis run without changing the original Zentao Item.
+_Avoid_: Code Clue, original description, writeback update
+
 **Code Clue**:
 An explicit user-provided aid for finding relevant source code for a Zentao Item.
 _Avoid_: Analysis result, proof, collected code
@@ -109,6 +113,16 @@ _Avoid_: PRD generator, code analyzer, Agent CLI Skill
 - A **Zentao Item** is classified as either a **Feature Item** or a **Defect Item** before analysis.
 - A **Zentao Item** alone does not contain an **Analysis Result**.
 - An **LLM Understanding Summary** describes the intended meaning of a **Zentao Item** and must not duplicate the **Analysis Result** sections.
+- **Supplemental Requirement Context** augments a **Feature Item** during analysis but does not replace or modify the original **Zentao Item** description.
+- **Supplemental Requirement Context** is an input to an **Analysis Result**, not an attribute of the fetched **Zentao Item**.
+- **Supplemental Requirement Context** belongs to exactly one **Feature Item** identified by its Zentao Item ID.
+- Multiple inputs for the same **Supplemental Requirement Context** are conflicting sources, not additive context.
+- **Supplemental Requirement Context** does not apply to a **Defect Item**; defect-specific additional facts require a distinct concept.
+- A **PRD Document** distinguishes **Supplemental Requirement Context** from the original **Zentao Item** summary.
+- When **Supplemental Requirement Context** is provided, the **Analysis Result** evaluates the combined expected behavior of the **Feature Item** and its supplemental context.
+- An **Analysis Result** does not attribute each gap or verification item separately to **Supplemental Requirement Context** unless requirement-level traceability is introduced later.
+- A **PRD Document** and its **Debug Bundle** retain the provided **Supplemental Requirement Context** so reviewers can identify the additional analysis input.
+- A **Summary Report** indexes analysis outcomes but does not carry full **Supplemental Requirement Context** content.
 - A **Code Clue** may be either a **Search Hint** or a **Seed Path**.
 - A **Clues File** provides item-specific **Code Clues** when a run analyzes multiple Zentao Items.
 - A **Seed Path** must be a file inside the repository, otherwise it becomes a **Rejected Clue**.
@@ -116,6 +130,8 @@ _Avoid_: PRD generator, code analyzer, Agent CLI Skill
 - A **Search Hint** does not become a **Rejected Clue** because the analyzer does not load source content from it.
 - **Code Evidence** constrains the confidence and conclusion of an **Analysis Result**.
 - **Structured Evidence** is preferred for new Agent outputs; free-form evidence text exists only as a fallback.
+- A **Cited Evidence Location** may support implemented behavior, a missing behavior, or a limiting condition; it is not by itself an implemented feature.
+- Absence of **Code Evidence** prevents confirmation of gaps in a **Feature Item**; it is not itself a gap.
 - A **Debug Bundle** must include **Code Evidence** locations even when it does not include full source-code content.
 - A **Debug Bundle** distinguishes **Seed Locations** from **Cited Evidence Locations**.
 - A **Feature Item** produces exactly one **PRD Document** when document generation succeeds.
@@ -154,3 +170,9 @@ _Avoid_: PRD generator, code analyzer, Agent CLI Skill
 - "clue" was used to mean both prompt search text and source paths loaded by the analyzer; resolved: **Search Hint** guides Agent search, while **Seed Path** provides source content.
 - "collected location" implied the analyzer collected all relevant code; resolved: use **Seed Location** for source ranges preloaded from **Seed Paths**.
 - "allowed writes" was ambiguous about whether an Agent CLI could write generated analyzer outputs; resolved: only the **Analyzer Process** writes generated outputs, while an **Agent CLI Subprocess** is read/search-only.
+- "implemented feature" was proposed as a presentation of every **Cited Evidence Location**; resolved: cited evidence can also establish gaps or limitations, so documents retain the neutral code-evidence presentation unless positive implementation facts are modelled separately.
+- "no code evidence" was considered as a feature gap; resolved: it means the analyzer cannot determine whether gaps exist, not that a missing behavior has been established.
+- "manual requirement content" was ambiguous about whether it modifies the fetched item; resolved: **Supplemental Requirement Context** applies only to the current analysis run and remains separate from the original **Zentao Item** description.
+- "manual requirement content" in skill invocation was ambiguous about scope; resolved: the Agent extracts it from the user's instruction only when it is associated with a specific Zentao Item ID.
+- "manual requirement content" provided through more than one input channel was ambiguous about precedence; resolved: conflicting supplemental-context sources for the same item must be rejected rather than merged or silently overridden.
+- "manual requirement content" was considered for defect analysis; resolved: **Supplemental Requirement Context** is restricted to **Feature Items** and does not describe reproduction or diagnostic facts for a **Defect Item**.

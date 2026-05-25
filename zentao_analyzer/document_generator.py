@@ -94,6 +94,31 @@ def _render_key_evidence_table(analysis: AnalysisResult) -> str:
     return "\n".join(rows)
 
 
+def _render_prd_evidence(analysis: AnalysisResult) -> str:
+    locations = getattr(analysis, "cited_evidence_locations", []) or []
+    evidence = getattr(analysis, "evidence", []) or []
+    represented_evidence = {
+        " ".join(
+            part for part in (
+                f"{location.path}:{location.line_start}-{location.line_end}",
+                location.symbol or "",
+                location.reason or "",
+            ) if part
+        )
+        for location in locations
+    }
+
+    supplemental = [item for item in evidence if item not in represented_evidence]
+    if locations or evidence:
+        sections = [_render_key_evidence_table(analysis)]
+    else:
+        sections = ["无可定位代码证据；当前无法验证实现状态。"]
+    if supplemental:
+        notes = "\n".join(f"- {item}" for item in supplemental)
+        sections.append(f"补充说明：\n\n{notes}")
+    return "\n\n".join(sections)
+
+
 def validate_document_consistency(analysis: AnalysisResult, document: DocumentResult):
     issues = []
     try:
@@ -128,8 +153,12 @@ def _source_info(item: ZentaoItem, generated_at: str) -> str:
 
 
 def _render_prd(item: ZentaoItem, analysis: AnalysisResult, generated_at: str, document_path: str, writeback_status: str) -> str:
-    evidence = "\n".join(f"- {e}" for e in analysis.evidence) if analysis.evidence else "无"
-    gaps = "\n".join(f"- {g}" for g in analysis.gaps) if analysis.gaps else "无"
+    if analysis.gaps:
+        gaps = "\n".join(f"- {g}" for g in analysis.gaps)
+    elif analysis.is_insufficient_evidence():
+        gaps = "无法确定是否存在缺口"
+    else:
+        gaps = "无"
     recommendations = "\n".join(f"- {r}" for r in analysis.recommendations) if analysis.recommendations else "无"
     verification = "\n".join(f"- {v}" for v in analysis.verification) if analysis.verification else "无"
 
@@ -155,13 +184,9 @@ def _render_prd(item: ZentaoItem, analysis: AnalysisResult, generated_at: str, d
 - **优先级**：{analysis.priority or "未评估"}
 - **可信度**：{analysis.confidence or "未评估"}
 
-## 实现证据
-
-{evidence}
-
 ## 关键代码证据
 
-{_render_key_evidence_table(analysis)}
+{_render_prd_evidence(analysis)}
 
 ## 差异与缺口
 
