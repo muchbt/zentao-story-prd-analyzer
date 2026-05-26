@@ -7,6 +7,7 @@ import sys
 
 from .agent_client import AgentConfig
 from .analyzer import analyze
+from .analysis_result import RPStatus
 from .app_config import build_runtime_config
 from .code_clues import build_search_hints, build_seed_paths, load_clues_file
 from .debug_bundle import build_debug_bundle
@@ -31,6 +32,12 @@ def _plain_value(value, default=""):
     if isinstance(value, (str, int, float, bool)) or value is None:
         return value
     return default
+
+
+def _rp_recommended_action(detail):
+    if detail == "empty_requirement_points":
+        return "update_zentao_requirement"
+    return "manual_retry"
 
 
 def _append_option(command, flag, value):
@@ -293,24 +300,46 @@ def main():
             "cited_evidence_locations": _plain_locations(cited_locations),
             "evidence_validation_issues": _plain_locations(validation_issues),
         })
-        analysis_results.append({
+        result_dict: dict = {
             "item_id": result.item_id,
             "item_type": result.item_type,
-            "conclusion": result.conclusion,
-            "evidence": result.evidence,
-            "gaps": result.gaps,
-            "suspected_causes": result.suspected_causes,
-            "affected_scope": result.affected_scope,
-            "recommendations": result.recommendations,
-            "verification": result.verification,
-            "priority": result.priority,
-            "confidence": result.confidence,
             "understanding_summary": _plain_value(getattr(result, "understanding_summary", ""), ""),
             "error": result.error,
             "error_kind": error_kind,
             "retryable": retryable,
             "retry_reason": "agent_response_parse_failed" if retryable else "",
-        })
+        }
+        if result.item_type in ("story", "requirement"):
+            analysis_status = getattr(result, "analysis_status", "") or ""
+            if analysis_status == "requirement_points_unavailable":
+                result_dict["analysis_status"] = analysis_status
+                detail = getattr(result, "analysis_status_detail", "") or ""
+                result_dict["analysis_status_detail"] = detail
+                action = _plain_value(getattr(result, "recommended_action", ""), "") or ""
+                result_dict["recommended_action"] = action or _rp_recommended_action(detail)
+            else:
+                result_dict["conclusion"] = result.conclusion
+                result_dict["evidence"] = result.evidence
+                result_dict["gaps"] = result.gaps
+                result_dict["suspected_causes"] = result.suspected_causes
+                result_dict["affected_scope"] = result.affected_scope
+                result_dict["recommendations"] = result.recommendations
+                result_dict["verification"] = result.verification
+                result_dict["priority"] = result.priority
+                result_dict["confidence"] = result.confidence
+                if not result.error:
+                    result_dict["requirement_points"] = [rp.to_dict() for rp in (getattr(result, "requirement_points", []) or [])]
+        else:
+            result_dict["conclusion"] = result.conclusion
+            result_dict["evidence"] = result.evidence
+            result_dict["gaps"] = result.gaps
+            result_dict["suspected_causes"] = result.suspected_causes
+            result_dict["affected_scope"] = result.affected_scope
+            result_dict["recommendations"] = result.recommendations
+            result_dict["verification"] = result.verification
+            result_dict["priority"] = result.priority
+            result_dict["confidence"] = result.confidence
+        analysis_results.append(result_dict)
 
         logger.info("generate_docs", "started", status="running", item_id=item.id)
         doc = generate_document(item, result, output_root=output_root)
@@ -354,6 +383,11 @@ def main():
     debug_bundle.write_code_evidence_locations(evidence_location_items)
     debug_bundle.write_rejected_seed_paths(all_rejected_seed_paths)
 
+    for result_item in analysis_results:
+        rps = result_item.get("requirement_points", [])
+        if rps:
+            debug_bundle.write_requirement_points(result_item["item_id"], rps)
+
     combined_output = {
         **base_result,
         "analysis": analysis_results,
@@ -363,6 +397,7 @@ def main():
         "debug_bundle_error": debug_bundle.error,
         "log_file": runtime_config.log_file,
         "has_retryable_failure": any(item["retryable"] for item in analysis_results),
+        "has_rp_unavailable": any(item.get("analysis_status") == "requirement_points_unavailable" for item in analysis_results),
     }
 
     if args.output:
@@ -372,6 +407,8 @@ def main():
     else:
         print(json.dumps(combined_output, ensure_ascii=False, indent=2))
 
+    if combined_output["has_rp_unavailable"]:
+        return 1
     return 0
 
 

@@ -17,7 +17,8 @@ class TestAnalyzer(unittest.TestCase):
             item = ZentaoItem(id="1", type="story", title="T")
             with patch("zentao_analyzer.analyzer.call_llm", return_value={"conclusion": "无法判断", "evidence": [], "confidence": "低"}) as mock_llm:
                 result = analyze(item, td, agent="claude", agent_config=MagicMock(), seed_paths=[], search_hints=["hint"])
-        self.assertEqual(result.conclusion, "无法判断")
+        self.assertEqual(result.analysis_status, "requirement_points_unavailable")
+        self.assertEqual(result.conclusion, "")
         self.assertTrue(mock_llm.called)
         self.assertIn("hint", mock_llm.call_args[0][0])
 
@@ -44,9 +45,10 @@ class TestAnalyzer(unittest.TestCase):
             def recorder(kind, item_obj, payload):
                 records.append((kind, item_obj.id, payload))
             with patch("zentao_analyzer.analyzer.call_llm", return_value={"conclusion": "无法判断", "evidence": [], "confidence": "低", "raw": '{"ok":true}'}):
-                analyze(item, td, agent="codex", agent_config=MagicMock(), debug_recorder=recorder)
+                result = analyze(item, td, agent="codex", agent_config=MagicMock(), debug_recorder=recorder)
         self.assertEqual(records[0][0], "prompt")
         self.assertEqual(records[1], ("response", "4", '{"ok":true}'))
+        self.assertEqual(result.analysis_status, "requirement_points_unavailable")
 
 
 class TestEvidenceValidation(unittest.TestCase):

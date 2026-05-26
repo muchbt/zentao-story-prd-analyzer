@@ -50,6 +50,8 @@ def make_analysis():
     analysis.seed_locations = []
     analysis.rejected_seed_paths = []
     analysis.evidence_validation_issues = []
+    analysis.requirement_points = []
+    analysis.analysis_status = ""
     analysis.is_insufficient_evidence.return_value = False
     return analysis
 
@@ -238,6 +240,7 @@ class TestMainPhase4(unittest.TestCase):
             failed_analysis.error = "LLM 返回非 JSON"
             failed_analysis.error_kind = "parse"
             failed_analysis.conclusion = "无法判断"
+            failed_analysis.understanding_summary = ""
             argv = [
                 "zentao_analyzer.main.py", "--module", "requirement", "--project", "3",
                 "--analyze", "--repo-path", td, "--output-root", td, "--quiet",

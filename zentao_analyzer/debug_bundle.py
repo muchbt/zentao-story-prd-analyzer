@@ -110,6 +110,12 @@ class DebugBundle:
     def write_rejected_seed_paths(self, rejected_seed_paths: List[Any]) -> None:
         self._write_json("rejected_seed_paths.json", rejected_seed_paths)
 
+    def write_requirement_points(self, item_id: str, rps: Any) -> None:
+        if not self.enabled:
+            return
+        safe_id = _safe_part(item_id)
+        self._write_json(os.path.join("requirement_points", f"{safe_id}.json"), rps)
+
 
 def build_debug_bundle(enabled: bool, base_dir: str = "", module: str = "", run_id: str = "", timestamp: str = "", include_code: bool = False) -> DebugBundle:
     if not enabled:

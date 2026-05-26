@@ -3,7 +3,7 @@ from typing import List, Optional
 from .zentao_client import ZentaoItem
 
 
-_COMMON_SCHEMA = '''  "evidence": [
+_DEFECT_EVIDENCE_SCHEMA = '''  "evidence": [
     {
       "path": "文件路径",
       "line_start": 1,
@@ -22,7 +22,16 @@ _COMMON_SCHEMA = '''  "evidence": [
   "understanding_summary": "用自然语言概述你对禅道条目需求或问题的理解，不要重复证据、缺口、建议或验证步骤"'''
 
 
-_FEATURE_TEMPLATE = """你是高级代码分析 Agent。请根据以下禅道条目和目标代码仓库，判断功能实现完成度。
+_FEATURE_RP_EVIDENCE_SCHEMA = '''          {
+            "path": "文件路径",
+            "line_start": 1,
+            "line_end": 20,
+            "symbol": "函数或类名，可为空",
+            "reason": "该证据如何支持此需求点结论"
+          }'''
+
+
+_FEATURE_TEMPLATE = """你是高级代码分析 Agent。请根据以下禅道条目和目标代码仓库，分析功能实现完成度。
 
 【禅道条目】
 ID: {id}
@@ -51,14 +60,45 @@ ID: {id}
 2. 从需求描述和 Search Hint 中提取函数名、宏名、结构体名、枚举、文件名等标识符搜索。
 3. 优先搜索项目源码目录，避开 third-party/vendor/build/generated 等低价值目录。
 4. 输出严格 JSON，不要 Markdown 代码块，不要额外解释。
-5. evidence 必须引用仓库中实际存在的文件和行号，禁止编造。
-6. 如果代码仓库不足以判断，请设置 conclusion="无法判断"、confidence="低"，在 evidence 中说明"相关代码证据不足"。
-7. confidence="高" 意味着有直接代码证据支持；confidence="中" 意味着有间接证据或推断；confidence="低" 意味着证据不足。
-8. understanding_summary 只概述你对需求本身的理解，不要复制 conclusion、evidence、gaps、recommendations 或 verification。
-9. JSON Schema:
+
+【需求点拆分要求】
+5. 将禅道原始需求描述拆分为一个或多个可独立验证的需求点（Requirement Point）。
+6. 每个需求点描述一个可独立验证的预期行为单元，不是代码文件名或测试步骤。
+7. 需求点描述只能依据禅道原始需求，不能从用户搜索建议或代码线索中推导新需求。
+8. 为每个需求点独立判断实现状态、给出判定理由、关联代码证据和确认缺口。
+9. 如果代码仓库不足以判断某个需求点，该需求点状态设为"无法判断"，reason 说明证据不足。
+
+【状态与缺口约束】
+10. 需求点状态只能是：完成、部分完成、未完成、无法判断。
+11. 状态为"未完成"或"部分完成"时，gaps 必须包含至少一条确认的实现缺失或差异。没有确认缺口时，状态不得为"未完成"或"部分完成"，应设为"无法判断"。
+12. 状态为"完成"或"无法判断"时，gaps 必须为空数组。
+13. 完全没有有效代码证据的需求点，reason 中可说明"无代码证据"，但这不等同于确认缺口。
+
+【证据约束】
+14. evidence 必须引用仓库中实际存在的文件和行号，禁止编造。
+15. 每条 evidence 的 reason 必须说明该证据如何支持此需求点的结论。
+
+【其他字段】
+16. understanding_summary 只概述你对需求本身的理解，不要重复需求点判定、证据、缺口或建议。
+17. priority 和 verification 分别为整体优先级和验证建议。
+
+【JSON Schema】
 {{
-  "conclusion": "完成|部分完成|未完成|无法判断",
-{common_schema}
+  "requirement_points": [
+    {{
+      "description": "可独立验证的需求点描述",
+      "status": "完成|部分完成|未完成|无法判断",
+      "reason": "判定说明",
+      "gaps": ["确认的实现缺失或差异，状态为未完成或部分完成时必须非空"],
+      "evidence": [
+{rp_evidence_schema}
+      ]
+    }}
+  ],
+  "understanding_summary": "自然语言概述对需求本身的理解",
+  "priority": "高|中|低",
+  "recommendations": ["修改建议1", "..."],
+  "verification": ["验证建议1", "..."]
 }}
 """
 
@@ -98,7 +138,7 @@ ID: {id}
 9. JSON Schema:
 {{
   "conclusion": "已定位|部分定位|无法定位",
-{common_schema}
+{defect_evidence_schema}
 }}
 """
 
@@ -131,7 +171,7 @@ def build_feature_prompt(item: ZentaoItem, repo_path: str, seed_snippets=None, s
         repo_path=repo_path,
         seed_context=_format_seed_context(seed_snippets or []),
         search_hints=_format_search_hints(search_hints),
-        common_schema=_COMMON_SCHEMA,
+        rp_evidence_schema=_FEATURE_RP_EVIDENCE_SCHEMA,
     )
 
 
@@ -145,5 +185,5 @@ def build_defect_prompt(item: ZentaoItem, repo_path: str, seed_snippets=None, se
         repo_path=repo_path,
         seed_context=_format_seed_context(seed_snippets or []),
         search_hints=_format_search_hints(search_hints),
-        common_schema=_COMMON_SCHEMA,
+        defect_evidence_schema=_DEFECT_EVIDENCE_SCHEMA,
     )

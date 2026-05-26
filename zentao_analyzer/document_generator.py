@@ -6,7 +6,7 @@ from typing import Optional
 import re
 
 from .zentao_client import ZentaoItem
-from .analysis_result import AnalysisResult
+from .analysis_result import AnalysisResult, RequirementPoint, RPStatus
 
 
 @dataclasses.dataclass
@@ -74,6 +74,33 @@ def _track_section(document_path: str, writeback_status: str) -> str:
 - 输出文件: {document_path}
 - 回写禅道: {writeback_status}
 """
+
+
+def _render_requirement_points_table(analysis: AnalysisResult) -> str:
+    rps = getattr(analysis, "requirement_points", []) or []
+    if not rps:
+        return ""
+    rows = ["| ID | 需求点 | 状态 | 说明 |", "|---|---|---|---|"]
+    for rp in rps:
+        reason = rp.reason or ""
+        rows.append(f"| {rp.id} | {rp.description} | {rp.status} | {reason} |")
+    return "\n".join(rows)
+
+
+def _render_prd_gaps(analysis: AnalysisResult) -> str:
+    rps = getattr(analysis, "requirement_points", []) or []
+    if rps:
+        gaps = analysis.gaps
+        if gaps:
+            return "\n".join(f"- {g}" for g in gaps)
+        if analysis.conclusion in (RPStatus.INDETERMINATE,):
+            return "无法确定是否存在缺口"
+        return "无"
+    if analysis.gaps:
+        return "\n".join(f"- {g}" for g in analysis.gaps)
+    if analysis.is_insufficient_evidence():
+        return "无法确定是否存在缺口"
+    return "无"
 
 
 def _render_key_evidence_table(analysis: AnalysisResult) -> str:
@@ -159,12 +186,18 @@ def _render_prd(item: ZentaoItem, analysis: AnalysisResult, generated_at: str, d
         gaps = "无法确定是否存在缺口"
     else:
         gaps = "无"
+    gaps = _render_prd_gaps(analysis)
     recommendations = "\n".join(f"- {r}" for r in analysis.recommendations) if analysis.recommendations else "无"
     verification = "\n".join(f"- {v}" for v in analysis.verification) if analysis.verification else "无"
 
     diagnostic_banner = ""
     if analysis.error or analysis.is_insufficient_evidence():
         diagnostic_banner = "> 诊断文档：当前条目未能生成完整 PRD。\n\n"
+
+    rp_table = _render_requirement_points_table(analysis)
+    rp_section = ""
+    if rp_table:
+        rp_section = f"\n## 需求点完成情况\n\n{rp_table}\n"
 
     return f"""# PRD: {item.title}
 
@@ -183,7 +216,7 @@ def _render_prd(item: ZentaoItem, analysis: AnalysisResult, generated_at: str, d
 - **结论**：{analysis.conclusion or "未判断"}
 - **优先级**：{analysis.priority or "未评估"}
 - **可信度**：{analysis.confidence or "未评估"}
-
+{rp_section}
 ## 关键代码证据
 
 {_render_prd_evidence(analysis)}

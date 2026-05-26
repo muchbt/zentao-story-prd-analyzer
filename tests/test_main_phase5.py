@@ -57,6 +57,8 @@ def make_analysis(seed_path="src/a.c", rejected=None):
     ]
     analysis.rejected_seed_paths = rejected or []
     analysis.evidence_validation_issues = []
+    analysis.requirement_points = []
+    analysis.analysis_status = ""
     analysis.is_insufficient_evidence.return_value = False
     return analysis
 

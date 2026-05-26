@@ -1,10 +1,10 @@
 import json
 import os
 from datetime import datetime, timezone
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from .zentao_client import ZentaoItem
-from .analysis_result import AnalysisResult
+from .analysis_result import AnalysisResult, RequirementPoint, RPStatus, _coerce_str
 from .document_generator import DocumentResult
 
 
@@ -19,7 +19,7 @@ def build_summary_item(
     debug_bundle: str = "",
 ) -> Dict[str, Any]:
     """为单个条目构建汇总数据结构，排除敏感信息"""
-    return {
+    result: Dict[str, Any] = {
         "item_id": item.id,
         "item_type": item.type,
         "title": item.title,
@@ -43,6 +43,37 @@ def build_summary_item(
         "verification_count": len(analysis.verification),
         "writeback": writeback,
     }
+    rps_raw = getattr(analysis, "requirement_points", None)
+    rps = list(rps_raw) if rps_raw else []
+    analysis_status = str(getattr(analysis, "analysis_status", "") or "")
+    if item.type in ("story", "requirement"):
+        if analysis_status == "requirement_points_unavailable":
+            result["has_unconfirmed_requirement_points"] = True
+            result["analysis_status"] = analysis_status
+            result["analysis_status_detail"] = getattr(analysis, "analysis_status_detail", "") or ""
+            result["recommended_action"] = _coerce_str(getattr(analysis, "recommended_action", "")) or (
+                "update_zentao_requirement"
+                if result["analysis_status_detail"] == "empty_requirement_points"
+                else "manual_retry"
+            )
+        elif rps:
+            counts = {
+                RPStatus.COMPLETED: 0,
+                RPStatus.PARTIALLY_COMPLETED: 0,
+                RPStatus.NOT_COMPLETED: 0,
+                RPStatus.INDETERMINATE: 0,
+            }
+            for rp in rps:
+                status = rp.status
+                if status in counts:
+                    counts[status] += 1
+            result["requirement_point_count"] = len(rps)
+            result["requirement_point_status_counts"] = counts
+            result["has_unconfirmed_requirement_points"] = any(
+                rp.status == RPStatus.INDETERMINATE for rp in rps
+            )
+            result["analysis_status"] = analysis_status
+    return result
 
 
 def write_summary_report(

@@ -48,6 +48,8 @@ class TestMainPhase3(unittest.TestCase):
             mock_analysis.seed_locations = []
             mock_analysis.rejected_seed_paths = []
             mock_analysis.evidence_validation_issues = []
+            mock_analysis.requirement_points = []
+            mock_analysis.analysis_status = ""
 
             with patch.object(main.ZentaoClient, "get_item", return_value=mock_item):
                 with patch("zentao_analyzer.main.analyze", return_value=mock_analysis):
