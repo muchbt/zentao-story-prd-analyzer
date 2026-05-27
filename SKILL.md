@@ -27,13 +27,14 @@ Use this skill to analyze Zentao `story`, `requirement`, `bug`, `ticket`, or `fe
    python3 <ANALYZER_DIR>/main.py --help
    ```
 
-3. Verify `zentao` CLI is available and authenticated:
+3. Verify `zentao` CLI is available and a profile is selected when needed:
 
    ```bash
    command -v zentao
    zentao profile
-   zentao user --format json --machine-readable
    ```
+
+   Do not use `zentao user` as an authentication check: it reads the user module rather than identifying the current session and may require unrelated permission. The analyzer's requested item fetch validates authentication and reports authentication failures.
 
 4. Select the Agent backend to match the host CLI:
    - Claude Code: `--agent claude`
@@ -59,12 +60,27 @@ The Agent CLI subprocess is read/search-only. It must return structured JSON to 
 
 ## Command Templates
 
-Single feature item:
+Single feature item (Zentao ID):
 
 ```bash
 python3 <ANALYZER_DIR>/main.py \
   --module requirement \
   --id <zentao_id> \
+  --analyze \
+  --repo-path <target_repo> \
+  --agent <claude|codex|opencode> \
+  --agent-timeout 900 \
+  --quiet
+```
+
+Provided Requirement (user-submitted requirement text):
+
+```bash
+python3 <ANALYZER_DIR>/main.py \
+  --module requirement \
+  --id <user_provided_id> \
+  --title "Confirmed Requirement Title" \
+  --requirement-file /tmp/requirement.txt \
   --analyze \
   --repo-path <target_repo> \
   --agent <claude|codex|opencode> \
@@ -102,6 +118,38 @@ python3 <ANALYZER_DIR>/main.py \
   --quiet
 ```
 
+## Provided Requirement Mode
+
+When a user provides complete requirement text instead of a Zentao ID:
+
+1. Accept the full requirement text from the user.
+2. If the user has not provided a requirement ID, ask for one. The ID is only used for output file naming and does not trigger a Zentao read.
+3. Recommend or confirm the requirement title with the user before proceeding.
+4. Write the text to a temporary file, then invoke the analyzer with `--requirement-file`, `--id`, and `--title`.
+
+Rules:
+- `--requirement-file` is only valid with `--module requirement` or `--module story`.
+- `--requirement-file` requires both `--id` and `--title`.
+- In Provided Requirement mode, the analyzer does **not** call `ZentaoClient.get_item()`, `list_items()`, or login. The ID does not trigger a Zentao lookup or content merge.
+- The requirement source is labeled `provided_requirement` in the output and PRD.
+- Logs and stderr do not echo the full requirement text.
+
+## PRD Content Boundaries
+
+The PRD separates three types of formal content:
+
+| Content Type | Source & Purpose | Disallowed |
+| --- | --- | --- |
+| Requirement Interpretation | Summarize scope, terms, rules, scenarios, matrix, and flow from the Requirement Source | Writing code search results or unconfirmed speculation as requirement facts |
+| Code Impact Analysis | Identify related existing modules, files, and symbols; locations must pass validation | Counting "related locations" as completion evidence |
+| Completion Assessment | Derive completion, gaps, and confidence from Requirement Points and valid Code Evidence only | Supporting formal conclusions with ungrounded explanations or Implementation Recommendations |
+
+Items with `source: "code_context"` display a label: "代码侧候选上下文，不构成需求定义". Items with `source: "insufficient"` display: "原始需求未提供足够信息".
+
+Implementation Recommendations (section 5) are clearly advisory and do not represent existing implementations.
+
+When `requirement_interpretation` or `code_impact` is missing or structurally invalid but `requirement_points` and Completion Assessment are valid, the PRD is still generated. The affected sections display "分析结果未提供有效内容" and the Summary Report and Debug Bundle record the degradation.
+
 ## Clues File
 
 ```json
@@ -127,8 +175,13 @@ If the user explicitly confirms a rerun and it succeeds, treat the latest genera
 
 The analyzer prints final JSON to stdout unless `--output` is provided. Important fields:
 
-- `items`: fetched Zentao Items.
+- `items`: fetched Zentao Items or provided requirement item.
 - `analysis`: completion or defect-cause Analysis Results.
+  - `requirement_source`: `"zentao"` or `"provided_requirement"`.
+  - `requirement_interpretation`: structured interpretation (scope, terms, rules, scenarios, matrix, flow, pending confirmations) when present.
+  - `code_impact`: related code locations and impact notes when present.
+  - `requirement_points`: per-point completion assessment.
+  - `rich_content_issues`: list of issues when interpretation or code impact is missing or invalid.
 - `documents`: generated PRD/ISSUE Markdown paths.
 - `summary_report`: machine-readable summary path.
 - `debug_bundle`: diagnostic bundle path.

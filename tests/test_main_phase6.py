@@ -38,11 +38,24 @@ def make_item(**overrides):
         description="Desc", status="active", priority="1",
         project="", product="41", execution="",
         assigned_to="dev", created_by="pm", created_date="2026-05-20",
+        requirement_source="zentao",
     )
     defaults.update(overrides)
     for k, v in defaults.items():
         setattr(item, k, v)
     return item
+
+
+def add_rich_content_attrs(mock_analysis):
+    for attr in ("requirement_source", "requirement_interpretation", "code_impact", "rich_content_issues"):
+        if not hasattr(mock_analysis, attr) or isinstance(getattr(mock_analysis, attr), MagicMock):
+            if attr == "requirement_source":
+                setattr(mock_analysis, attr, "zentao")
+            elif attr == "rich_content_issues":
+                setattr(mock_analysis, attr, [])
+            else:
+                setattr(mock_analysis, attr, None)
+    return mock_analysis
 
 
 def make_analysis_with_rps(rps, **overrides):
@@ -354,7 +367,7 @@ class TestDocumentGeneratorWithRPs(unittest.TestCase):
             doc = generate_document(item, analysis, output_root=td, generated_at="2026-05-26T10:00:00+08:00")
             with open(doc.document_path, encoding="utf-8") as f:
                 content = f.read()
-            self.assertIn("## 需求点完成情况", content)
+            self.assertIn("## 4. 需求对照表", content)
             self.assertIn("RP-001", content)
             self.assertIn("MCU 上报指定状态", content)
             self.assertIn("RP-002", content)
@@ -370,7 +383,8 @@ class TestDocumentGeneratorWithRPs(unittest.TestCase):
             doc = generate_document(item, analysis, output_root=td)
             with open(doc.document_path, encoding="utf-8") as f:
                 content = f.read()
-            self.assertNotIn("## 需求点完成情况", content)
+            self.assertIn("## 4. 需求对照表", content)
+            self.assertIn("未提取结构化需求点", content)
 
     def test_prd_gaps_with_rp_prefix(self):
         with tempfile.TemporaryDirectory() as td:
@@ -422,6 +436,7 @@ class TestAnalyzerFeatureIntegration(unittest.TestCase):
             mock_analysis.is_insufficient_evidence.return_value = False
             mock_analysis.requirement_points = rps
             mock_analysis.analysis_status = ""
+            mock_analysis = add_rich_content_attrs(mock_analysis)
 
             argv = [
                 "zentao_analyzer.main.py", "--module", "requirement", "--id", "5939",
@@ -469,6 +484,7 @@ class TestAnalyzerFeatureIntegration(unittest.TestCase):
             mock_analysis.requirement_points = []
             mock_analysis.analysis_status = "requirement_points_unavailable"
             mock_analysis.analysis_status_detail = "empty_requirement_points"
+            mock_analysis = add_rich_content_attrs(mock_analysis)
 
             argv = [
                 "zentao_analyzer.main.py", "--module", "requirement", "--id", "5939",
@@ -564,6 +580,7 @@ class TestAnalyzerFeatureIntegration(unittest.TestCase):
             mock_analysis.is_insufficient_evidence.return_value = False
             mock_analysis.requirement_points = []
             mock_analysis.analysis_status = ""
+            mock_analysis = add_rich_content_attrs(mock_analysis)
 
             argv = [
                 "zentao_analyzer.main.py", "--module", "bug", "--id", "5939",

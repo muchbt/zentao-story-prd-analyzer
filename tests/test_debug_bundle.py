@@ -46,6 +46,7 @@ class TestDebugBundle(unittest.TestCase):
             item.title = "T"
             item.status = "active"
             item.priority = "1"
+            item.requirement_source = "zentao"
             bundle.write_items([item])
             bundle.write_scan_summary({"seed_path_count": 1})
             bundle.write_prompt("1", "password=abc")

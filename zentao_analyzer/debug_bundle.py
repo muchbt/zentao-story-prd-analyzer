@@ -15,13 +15,17 @@ def _safe_part(value: str) -> str:
 
 
 def _item_to_dict(item: Any) -> Dict[str, Any]:
-    return {
+    result = {
         "id": getattr(item, "id", ""),
         "type": getattr(item, "type", ""),
         "title": getattr(item, "title", ""),
         "status": getattr(item, "status", ""),
         "priority": getattr(item, "priority", ""),
     }
+    req_source = getattr(item, "requirement_source", None)
+    if req_source:
+        result["requirement_source"] = req_source
+    return result
 
 
 def _to_plain(value: Any) -> Any:
@@ -115,6 +119,18 @@ class DebugBundle:
             return
         safe_id = _safe_part(item_id)
         self._write_json(os.path.join("requirement_points", f"{safe_id}.json"), rps)
+
+    def write_rich_content_diagnostics(self, item_id: str, data: Dict[str, Any]) -> None:
+        if not self.enabled:
+            return
+        safe_id = _safe_part(item_id)
+        self._write_json(os.path.join("rich_content", f"{safe_id}.json"), data)
+
+    def write_code_impact_validation_issues(self, item_id: str, issues: List[Any]) -> None:
+        if not self.enabled:
+            return
+        safe_id = _safe_part(item_id)
+        self._write_json(os.path.join("code_impact_validation", f"{safe_id}.json"), {"issues": _to_plain(issues)})
 
 
 def build_debug_bundle(enabled: bool, base_dir: str = "", module: str = "", run_id: str = "", timestamp: str = "", include_code: bool = False) -> DebugBundle:

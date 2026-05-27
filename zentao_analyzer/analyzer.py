@@ -3,6 +3,8 @@ from typing import Any, List, Optional
 
 from .analysis_result import (
     AnalysisResult,
+    CodeImpactAnalysis,
+    CodeImpactLocation,
     EvidenceValidationIssue,
     RequirementPoint,
     RPStatus,
@@ -15,6 +17,8 @@ from .analysis_result import (
     compute_item_gaps,
     correct_invalidated_rps,
     correct_rps_without_valid_evidence,
+    parse_code_impact,
+    parse_requirement_interpretation,
     parse_requirement_points,
     validate_requirement_points,
     validate_rp_evidence_locations,
@@ -73,6 +77,42 @@ def validate_evidence_locations(repo_path: str, result: AnalysisResult) -> List[
     return issues
 
 
+def validate_code_impact_locations(repo_path: str, locations: List[CodeImpactLocation]) -> List[EvidenceValidationIssue]:
+    issues: List[EvidenceValidationIssue] = []
+    for location in locations:
+        path = location.path
+        issue = EvidenceValidationIssue(path=path, line_start=location.line_start, line_end=location.line_end)
+        if not path:
+            issue.reason = "code_impact_missing_path"
+            issues.append(issue)
+            continue
+        resolved_path = _resolve_repo_path(repo_path, path)
+        if not _inside_repo(repo_path, path):
+            issue.reason = "code_impact_outside_repo"
+            issues.append(issue)
+            continue
+        if not os.path.exists(resolved_path):
+            issue.reason = "code_impact_not_found"
+            issues.append(issue)
+            continue
+        if os.path.isdir(resolved_path):
+            issue.reason = "code_impact_is_directory"
+            issues.append(issue)
+            continue
+        if not os.path.isfile(resolved_path):
+            issue.reason = "code_impact_not_file"
+            issues.append(issue)
+            continue
+        if location.line_start <= 0 or location.line_end <= 0 or location.line_start > location.line_end:
+            issue.reason = "code_impact_invalid_line_range"
+            issues.append(issue)
+            continue
+        if location.line_end > _line_count(resolved_path):
+            issue.reason = "code_impact_line_out_of_range"
+            issues.append(issue)
+    return issues
+
+
 def _apply_insufficient_evidence_guard(item: ZentaoItem, result: AnalysisResult) -> None:
     if result.is_insufficient_evidence():
         result.conclusion = "无法判断" if item.type in ("story", "requirement") else "无法定位"
@@ -100,6 +140,7 @@ def _analyze_feature(
             item_id=item.id,
             item_type=item.type,
             item_title=item.title,
+            requirement_source=getattr(item, "requirement_source", "zentao") or "zentao",
             raw_response=raw_response,
             seed_locations=seed_locations,
             rejected_seed_paths=rejected_seed_paths,
@@ -107,6 +148,34 @@ def _analyze_feature(
             analysis_status_detail=detail,
             recommended_action=action,
         )
+
+    requirement_source = getattr(item, "requirement_source", "zentao") or "zentao"
+    rich_content_issues: List[str] = []
+
+    interp, interp_issues = parse_requirement_interpretation(data.get("requirement_interpretation"))
+    rich_content_issues.extend(interp_issues or [])
+
+    code_impact_raw, code_impact_issues = parse_code_impact(data.get("code_impact"))
+    rich_content_issues.extend(code_impact_issues or [])
+
+    validated_code_impact = code_impact_raw
+    code_impact_validation_issues: List[EvidenceValidationIssue] = []
+    if validated_code_impact and validated_code_impact.related_locations:
+        code_impact_validation_issues = validate_code_impact_locations(repo_path, validated_code_impact.related_locations)
+        if code_impact_validation_issues:
+            validated_locs: List[CodeImpactLocation] = []
+            invalid_paths = set()
+            for iss in code_impact_validation_issues:
+                invalid_paths.add((iss.path, iss.line_start, iss.line_end))
+            for loc in validated_code_impact.related_locations:
+                if (loc.path, loc.line_start, loc.line_end) not in invalid_paths:
+                    validated_locs.append(loc)
+                else:
+                    rich_content_issues.append(f"code_impact_location_invalid:{loc.path}:{loc.line_start}-{loc.line_end}")
+            validated_code_impact = CodeImpactAnalysis(
+                related_locations=validated_locs,
+                impact_notes=validated_code_impact.impact_notes,
+            )
 
     rps, has_malformed_items, rp_ids_with_invalid_evidence = parse_requirement_points(data.get("requirement_points"))
     if has_malformed_items:
@@ -178,6 +247,11 @@ def _analyze_feature(
         evidence_validation_issues=unique_evidence_issues,
         requirement_points=rps,
         analysis_status="",
+        requirement_source=requirement_source,
+        requirement_interpretation=interp,
+        code_impact=validated_code_impact,
+        rich_content_issues=rich_content_issues,
+        code_impact_validation_issues=code_impact_validation_issues,
     )
     return result
 

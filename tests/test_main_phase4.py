@@ -26,6 +26,7 @@ def make_item():
     item.assigned_to = "dev"
     item.created_by = "pm"
     item.created_date = "2026-05-20"
+    item.requirement_source = "zentao"
     return item
 
 
@@ -52,6 +53,11 @@ def make_analysis():
     analysis.evidence_validation_issues = []
     analysis.requirement_points = []
     analysis.analysis_status = ""
+    analysis.requirement_source = "zentao"
+    analysis.requirement_interpretation = None
+    analysis.code_impact = None
+    analysis.rich_content_issues = []
+    analysis.code_impact_validation_issues = []
     analysis.is_insufficient_evidence.return_value = False
     return analysis
 

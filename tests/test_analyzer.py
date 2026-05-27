@@ -6,8 +6,8 @@ from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from zentao_analyzer.analyzer import analyze, validate_evidence_locations
-from zentao_analyzer.analysis_result import AnalysisResult, EvidenceLocation
+from zentao_analyzer.analyzer import analyze, validate_evidence_locations, validate_code_impact_locations
+from zentao_analyzer.analysis_result import AnalysisResult, EvidenceLocation, CodeImpactLocation
 from zentao_analyzer.zentao_client import ZentaoItem
 
 
@@ -87,6 +87,89 @@ class TestEvidenceValidation(unittest.TestCase):
             ])
             issues = validate_evidence_locations(td, result)
         self.assertEqual([issue.reason for issue in issues], ["line_out_of_range", "outside_repo"])
+
+
+class TestCodeImpactLocationValidation(unittest.TestCase):
+    def test_validate_valid_code_impact_location(self):
+        with tempfile.TemporaryDirectory() as td:
+            src = os.path.join(td, "a.c")
+            with open(src, "w") as f:
+                f.write("int a;\n")
+            locations = [CodeImpactLocation(component="模块A", path=src, line_start=1, line_end=1, symbol="a", reason="相关")]
+            issues = validate_code_impact_locations(td, locations)
+        self.assertEqual(issues, [])
+
+    def test_validate_outside_repo_code_impact_location(self):
+        locations = [CodeImpactLocation(component="模块A", path="/outside/a.c", line_start=1, line_end=1)]
+        issues = validate_code_impact_locations("/repo", locations)
+        self.assertEqual(len(issues), 1)
+        self.assertEqual(issues[0].reason, "code_impact_outside_repo")
+
+    def test_validate_nonexistent_code_impact_location(self):
+        with tempfile.TemporaryDirectory() as td:
+            locations = [CodeImpactLocation(component="模块A", path=os.path.join(td, "missing.c"), line_start=1, line_end=1)]
+            issues = validate_code_impact_locations(td, locations)
+        self.assertEqual(len(issues), 1)
+        self.assertEqual(issues[0].reason, "code_impact_not_found")
+
+    def test_validate_code_impact_location_without_path(self):
+        issues = validate_code_impact_locations("/repo", [
+            CodeImpactLocation(component="模块A", path="", line_start=1, line_end=1),
+        ])
+        self.assertEqual(len(issues), 1)
+        self.assertEqual(issues[0].reason, "code_impact_missing_path")
+
+    def test_validate_code_impact_directory_is_reported_not_opened(self):
+        with tempfile.TemporaryDirectory() as td:
+            locations = [CodeImpactLocation(component="模块A", path=td, line_start=1, line_end=1)]
+            issues = validate_code_impact_locations(td, locations)
+        self.assertEqual(len(issues), 1)
+        self.assertEqual(issues[0].reason, "code_impact_is_directory")
+
+    def test_validate_code_impact_does_not_affect_completion(self):
+        with tempfile.TemporaryDirectory() as td:
+            src = os.path.join(td, "a.c")
+            with open(src, "w") as f:
+                f.write("int a;\n")
+            missing = os.path.join(td, "missing.c")
+            from zentao_analyzer.analyzer import _analyze_feature
+            item = ZentaoItem(id="1", type="story", title="T")
+            data = {
+                "requirement_points": [
+                    {"description": "功能A", "status": "完成", "reason": "已实现", "gaps": [], "evidence": [{"path": src, "line_start": 1, "line_end": 1, "symbol": "a", "reason": "实现"}]},
+                ],
+                "understanding_summary": "",
+                "code_impact": {
+                    "related_locations": [
+                        {"component": "模块X", "path": missing, "line_start": 1, "line_end": 1},
+                    ],
+                    "impact_notes": ["影响说明"],
+                },
+            }
+            result = _analyze_feature(item, data, "", td, [], [])
+        self.assertEqual(result.conclusion, "完成")
+        self.assertEqual(result.confidence, "高")
+        self.assertIsNotNone(result.code_impact)
+        self.assertEqual(len(result.code_impact.related_locations), 0)
+        self.assertTrue(any("code_impact_location_invalid" in issue for issue in result.rich_content_issues))
+        self.assertEqual(result.code_impact_validation_issues[0].reason, "code_impact_not_found")
+
+    def test_invalid_rich_content_schema_is_preserved_for_diagnostics(self):
+        with tempfile.TemporaryDirectory() as td:
+            src = os.path.join(td, "a.c")
+            with open(src, "w") as f:
+                f.write("int a;\n")
+            from zentao_analyzer.analyzer import _analyze_feature
+            item = ZentaoItem(id="1", type="story", title="T")
+            result = _analyze_feature(item, {
+                "requirement_interpretation": {"scope": "bad"},
+                "code_impact": {"related_locations": "bad"},
+                "requirement_points": [
+                    {"description": "功能A", "status": "完成", "reason": "已实现", "gaps": [], "evidence": [{"path": src, "line_start": 1, "line_end": 1}]},
+                ],
+            }, "", td, [], [])
+        self.assertIn("requirement_interpretation_invalid_scope", result.rich_content_issues)
+        self.assertIn("code_impact_invalid_related_locations", result.rich_content_issues)
 
 
 if __name__ == "__main__":

@@ -52,6 +52,7 @@ class ZentaoItem:
     assigned_to: str = ""
     created_by: str = ""
     created_date: str = ""
+    requirement_source: str = "zentao"
     raw_data: Dict[str, Any] = dataclasses.field(default_factory=dict, repr=False)
 
     @classmethod

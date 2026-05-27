@@ -8,25 +8,25 @@
 
 ## 1. 背景与目标
 
-一个禅道 `Feature Item` 可能同时描述多个可独立验证的预期行为。仅以条目级证据和结论分析，会掩盖“部分需求点已实现、部分需求点缺失或无法确认”的情况。
+一个 `Feature Item` 可能同时描述多个可独立验证的预期行为。仅以条目级证据和结论分析，会掩盖“部分需求点已实现、部分需求点缺失或无法确认”的情况。
 
 阶段六引入 `Requirement Point` 作为所有 `Feature Item` 分析的基础能力：
 
-- 根据从禅道获取的原始需求描述提出可独立验证的需求点。
+- 根据本阶段已有的禅道原始需求描述提出可独立验证的需求点。
 - 为每个需求点关联代码证据并独立判断实现状态。
 - 根据逐点结论汇总条目级 `Analysis Result`。
 - 保留拆分结果和证据关联，供用户复核。
 
-该能力适用于普通单仓库模式，也适用于后续显式启用多侧分析的工程。阶段七消费阶段六输出，为需求点增加多侧范围和责任侧规则。
+该能力为后续 Feature Item PRD 增强提供完成度基础。新的阶段七消费阶段六输出，在保留逐点证据规则的同时扩展需求来源与深度 PRD 展示。
 
 ---
 
 ## 2. 阶段边界
 
 - 阶段六仅针对 `Feature Item` 的实现完成度分析；`Defect Item` 不在本阶段范围内。
-- 需求预期行为仅以从禅道获取的 `Feature Item` 原始描述为依据。
+- 阶段六实现时，需求预期行为仅以从禅道获取的 `Feature Item` 原始描述为依据；新的阶段七可增加用户提供的完整需求正文作为互斥的正式来源。
 - `Code Clue` 和 `Search Hint` 只能辅助定位代码，不得作为新增需求、验收条件或 `Requirement Point` 拆分依据。
-- 阶段六不引入 `Code Side`、`Analysis Scope`、`Responsibility Hint` 或 `Candidate Location`；这些属于阶段七的多侧扩展。
+- 阶段六不引入深度 PRD 的需求解读、代码影响展示或手工需求输入；这些由新的阶段七扩展。
 - 阶段六上线后，所有 `Feature Item` 分析默认启用需求点拆分，不提供显式启用开关。
 - `Defect Item` 保持现有分析行为，不启用需求点拆分。
 - 既有顶层结论字段继续保留，其值由需求点状态汇总产生；新增需求点输出不得移除既有字段。
@@ -137,13 +137,13 @@
 字段规则：
 
 - `id` 是本次运行内稳定的需求点标识。
-- `description` 来自对禅道原始需求描述的拆分，不得来自用户补充文本或代码线索。
+- `description` 来自对本次正式需求来源原文的拆分，不得来自代码线索或与该来源混合的补充文本。
 - `status` 使用阶段六定义的基础状态：`完成`、`部分完成`、`未完成`、`无法判断`。
 - `reason` 说明该需求点状态如何由证据得出；完全没有有效代码证据时可显示“无代码证据”，但不得因此自动形成缺口。
 - `gaps` 保存该需求点已经确认的实现缺失或不一致，不得从 `reason` 文本中二次解析生成。
 - `evidence` 复用阶段五结构化 `Code Evidence` 对象格式及位置校验逻辑；阶段六不定义另一套证据位置模型。
 - 对阶段五兼容的旧字符串 evidence，仅沿用既有 fallback 处理；不得为无法定位的字符串伪造结构化位置。
-- 阶段六的 `requirement_points` 不输出 `responsible_sides`、`scope` 或 `candidate_locations`；这些字段只能由阶段七的多侧扩展增加。
+- 阶段六的 `requirement_points` 结构保持完成度证据契约，不承载深度 PRD 的需求解读或代码影响字段。
 - 需求点结构有效，但其 `evidence` 对象无效或引用位置未通过校验时，只将受影响需求点修正为 `无法判断`，不将整个条目标记为需求点合约失败。
 - Feature Agent 只返回 `requirement_points` 中的逐点证据；顶层 `evidence` 由 Analyzer 汇总有效逐点证据后生成，Agent 不提供独立的顶层证据结论。
 
@@ -267,16 +267,15 @@
 
 ---
 
-## 9. 已废弃的替代方案：补充需求内容
+## 9. 已废弃的替代方案：合并补充需求内容
 
-曾讨论通过用户输入引入 `Supplemental Requirement Context`，该方案已撤销并禁止实现：
+曾讨论将用户输入作为禅道需求的 `Supplemental Requirement Context` 合并分析，该方案已撤销并禁止实现：
 
-- 需求内容仅以禅道中获取的原始描述为唯一来源。
-- Analyzer、Skill、PRD、Debug Bundle、Summary Report 和最终 JSON 均不得实现或输出“补充需求上下文”能力。
+- 单次分析只允许一个正式需求正文来源，不得将用户补充文本与禅道描述混合为新需求依据。
+- Analyzer、Skill、PRD、Debug Bundle、Summary Report 和最终 JSON 均不得实现或输出“补充需求上下文合并”能力。
 - 不新增 `--supplemental-requirement-context` 参数，也不在 clues file 中新增同类字段。
-- 用户通过 Skill 明确输入“补充需求内容: ...”时，Skill 应拒绝执行分析，提示先在禅道更新需求后重试。
+- 用户需要以完整自有正文作为需求依据时，使用新阶段七定义的 `Provided Requirement` 独立输入模式，不与禅道正文合并。
 - Skill 不得将“补充需求内容”静默转换为 `Code Clue`。
-- 被拒绝的补充需求输入不启动 Analyzer，也不生成分析产物。
 
 允许用户提供的行为描述型代码线索仅为 `Search Hint`，不得用于拆分或变更 `Requirement Point`。
 
@@ -285,8 +284,8 @@
 ## 10. 与阶段七的关系
 
 - 阶段六负责所有 `Feature Item` 的 `Requirement Point` 拆分、基础逐点证据追溯和基础条目汇总。
-- 阶段七只在显式配置多侧工程时扩展阶段六结果，追加 `Code Side`、`Analysis Scope`、`Responsibility Hint`、`Candidate Location` 和范围受限结论。
-- 阶段七不得重新定义阶段六的需求来源、需求点拆分或基础证据有效性规则。
+- 新的阶段七为 Feature Item 增加 `Provided Requirement` 独立输入模式、`Requirement Interpretation` 与 `Code Impact Analysis`，并生成深度 PRD。
+- 新的阶段七不得弱化阶段六的需求点拆分和基础证据有效性规则；其扩展展示字段不参与完成度结论派生。
 
 ---
 

@@ -15,7 +15,7 @@ from .document_generator import generate_document, validate_document_consistency
 from .run_logger import RunLogger, redact_sensitive
 from .summary_report import build_summary_item, write_summary_report
 from .writeback import prepare_writeback_status
-from .zentao_client import ZentaoClient, ZentaoError, ZentaoFormatError
+from .zentao_client import ZentaoClient, ZentaoError, ZentaoFormatError, ZentaoItem
 
 
 def _plain_locations(locations):
@@ -45,7 +45,7 @@ def _append_option(command, flag, value):
         command.extend([flag, str(value)])
 
 
-def _build_parse_retry_command(args, runtime_config, item_id):
+def _build_parse_retry_command(args, runtime_config, item_id, agent_timeout=None):
     command = [
         "python3",
         sys.argv[0] or "main.py",
@@ -59,12 +59,19 @@ def _build_parse_retry_command(args, runtime_config, item_id):
     ]
     _append_option(command, "--agent", runtime_config.agent)
     _append_option(command, "--model", runtime_config.model)
-    _append_option(command, "--agent-timeout", runtime_config.agent_timeout)
+    _append_option(
+        command,
+        "--agent-timeout",
+        runtime_config.agent_timeout if agent_timeout is None else agent_timeout,
+    )
     _append_option(command, "--output-root", args.output_root)
     _append_option(command, "--clues", args.clues)
     _append_option(command, "--paths", args.paths)
     _append_option(command, "--clues-file", args.clues_file)
     _append_option(command, "--debug-bundle-dir", args.debug_bundle_dir)
+    if args.requirement_file:
+        _append_option(command, "--title", args.title)
+        _append_option(command, "--requirement-file", args.requirement_file)
     if args.quiet:
         command.append("--quiet")
     if args.verbose:
@@ -74,6 +81,58 @@ def _build_parse_retry_command(args, runtime_config, item_id):
     if args.debug_include_code:
         command.append("--debug-include-code")
     return redact_sensitive(shlex.join(command))
+
+
+def _has_cli_option(cli_args, option):
+    return any(arg == option or arg.startswith(f"{option}=") for arg in (cli_args or []))
+
+
+def _validate_provided_requirement_args(args, cli_args=None):
+    if not args.requirement_file:
+        if args.title:
+            return "--title 仅在 --requirement-file 模式下有效"
+        return None
+    if args.module not in ("story", "requirement"):
+        return "--requirement-file 仅支持 story 或 requirement 模块"
+    if not args.id:
+        return "--requirement-file 需要 --id 参数作为输出关联标识"
+    if not args.title:
+        return "--requirement-file 需要 --title 参数"
+    if args.login:
+        return "--requirement-file 与 --login 不能同时使用"
+    if args.server or args.user or args.password or args.token:
+        return "--requirement-file 与禅道登录参数不能同时使用"
+    if getattr(args, "product", None) not in (None, ""):
+        return "--requirement-file 与 --product 筛选不能同时使用"
+    if getattr(args, "execution", None) not in (None, ""):
+        return "--requirement-file 与 --execution 筛选不能同时使用"
+    if _has_cli_option(cli_args, "--project"):
+        return "--requirement-file 与 --project 筛选不能同时使用"
+    if _has_cli_option(cli_args, "--status"):
+        return "--requirement-file 与 --status 筛选不能同时使用"
+    if getattr(args, "limit", None) is not None:
+        return "--requirement-file 与 --limit 筛选不能同时使用"
+    return None
+
+
+def _load_provided_requirement(args):
+    try:
+        with open(args.requirement_file, "r", encoding="utf-8") as f:
+            content = f.read()
+    except (OSError, IOError) as e:
+        return None, f"无法读取需求文件: {e}"
+    content = content.strip()
+    if not content:
+        return None, "需求文件内容为空"
+    item = ZentaoItem(
+        id=args.id,
+        type=args.module,
+        title=args.title,
+        description=content,
+        status="provided",
+        requirement_source="provided_requirement",
+    )
+    return item, None
 
 
 def main():
@@ -114,7 +173,14 @@ def main():
     parser.add_argument("--paths", help="种子文件路径，逗号分隔，必须是 repo-path 内文件")
     parser.add_argument("--clues-file", help="按禅道条目 ID 提供代码线索的 JSON 文件")
     parser.add_argument("--output-root", default="docs", help="PRD/ISSUE 文档输出根目录")
+    parser.add_argument("--requirement-file", help="用户提供的需求正文文件路径；与 --id 和 --title 一起使用，不从禅道读取")
+    parser.add_argument("--title", help="需求标题；Provided Requirement 模式下必须提供")
     args = parser.parse_args()
+
+    requirement_file_error = _validate_provided_requirement_args(args, sys.argv[1:])
+    if requirement_file_error:
+        print(f"[错误] {requirement_file_error}", file=sys.stderr)
+        return 4
 
     runtime_config = build_runtime_config(args)
     logger = RunLogger(verbose=runtime_config.verbose, quiet=runtime_config.quiet, log_file=runtime_config.log_file)
@@ -145,7 +211,15 @@ def main():
 
     logger.info("fetch_items", "started", status="running", module=args.module, item_id=args.id or "")
     try:
-        if args.id:
+        if args.requirement_file:
+            provided_item, load_error = _load_provided_requirement(args)
+            if load_error:
+                logger.error("fetch_items", "failed", status="failed", error=load_error)
+                print(f"[错误] {load_error}", file=sys.stderr)
+                return 4
+            items = [provided_item]
+            logger.info("fetch_items", "done", status="done", count=1, source="provided_requirement")
+        elif args.id:
             items = [client.get_item(args.module, args.id)]
         else:
             items = client.list_items(
@@ -190,6 +264,10 @@ def main():
             print(f"[错误] 获取禅道数据失败: {err_msg}", file=sys.stderr)
         return 2  # AUTH_ERROR
 
+    for item in items:
+        if getattr(item, "requirement_source", "") == "provided_requirement":
+            logger.info("fetch_items", "provided_requirement_loaded", item_id=item.id, title=item.title, desc_length=len(item.description or ""))
+
     base_result = {
         "module": args.module,
         "count": len(items),
@@ -207,6 +285,7 @@ def main():
                 "assigned_to": item.assigned_to,
                 "created_by": item.created_by,
                 "created_date": item.created_date,
+                "requirement_source": item.requirement_source,
             }
             for item in items
         ],
@@ -271,6 +350,7 @@ def main():
             debug_bundle.write_response(item.id, payload or f"[无响应内容] item={item.id}")
 
     analysis_results = []
+    analysis_result_objects = []
     documents = []
     summary_items = []
     evidence_location_items = []
@@ -300,9 +380,9 @@ def main():
             current_timeout = runtime_config.agent_timeout
             suggested_timeout = current_timeout * 2
             print(f"[提示] LLM 分析超时（当前超时 {current_timeout} 秒）。可尝试延长超时时间重试：", file=sys.stderr)
-            retry_cmd = f"python3 main.py --module {args.module} --id {item.id} --analyze --repo-path {repo_path} --agent {runtime_config.agent} --agent-timeout {suggested_timeout}"
-            if args.quiet:
-                retry_cmd += " --quiet"
+            retry_cmd = _build_parse_retry_command(
+                args, runtime_config, item.id, agent_timeout=suggested_timeout,
+            )
             print(f"  {retry_cmd}", file=sys.stderr)
         if retryable:
             retry_cmd = _build_parse_retry_command(args, runtime_config, item.id)
@@ -330,6 +410,8 @@ def main():
             "retryable": retryable,
             "retry_reason": "agent_response_parse_failed" if retryable else "",
         }
+        requirement_source = getattr(item, "requirement_source", "zentao") or "zentao"
+        result_dict["requirement_source"] = requirement_source
         if result.item_type in ("story", "requirement"):
             analysis_status = getattr(result, "analysis_status", "") or ""
             if analysis_status == "requirement_points_unavailable":
@@ -350,6 +432,19 @@ def main():
                 result_dict["confidence"] = result.confidence
                 if not result.error:
                     result_dict["requirement_points"] = [rp.to_dict() for rp in (getattr(result, "requirement_points", []) or [])]
+                interp = getattr(result, "requirement_interpretation", None)
+                if interp is not None:
+                    result_dict["requirement_interpretation"] = interp.to_dict()
+                code_impact = getattr(result, "code_impact", None)
+                if code_impact is not None:
+                    result_dict["code_impact"] = code_impact.to_dict()
+                    result_dict["code_impact_location_count"] = len(code_impact.related_locations)
+                rich_issues = getattr(result, "rich_content_issues", []) or []
+                if rich_issues:
+                    result_dict["rich_content_issues"] = rich_issues
+                interp_pending = getattr(interp, "pending_confirmations", None)
+                if interp_pending:
+                    result_dict["has_pending_requirement_confirmation"] = True
         else:
             result_dict["conclusion"] = result.conclusion
             result_dict["evidence"] = result.evidence
@@ -361,6 +456,7 @@ def main():
             result_dict["priority"] = result.priority
             result_dict["confidence"] = result.confidence
         analysis_results.append(result_dict)
+        analysis_result_objects.append(result)
 
         logger.info("generate_docs", "started", status="running", item_id=item.id)
         doc = generate_document(item, result, output_root=output_root)
@@ -408,6 +504,17 @@ def main():
         rps = result_item.get("requirement_points", [])
         if rps:
             debug_bundle.write_requirement_points(result_item["item_id"], rps)
+
+    for item_obj, result_obj in zip(items, analysis_result_objects):
+        rich_issues = getattr(result_obj, "rich_content_issues", []) or []
+        if rich_issues:
+            debug_bundle.write_rich_content_diagnostics(item_obj.id, {
+                "requirement_source": getattr(item_obj, "requirement_source", "zentao") or "zentao",
+                "rich_content_issues": rich_issues,
+            })
+        code_impact_validation_issues = getattr(result_obj, "code_impact_validation_issues", None)
+        if code_impact_validation_issues and isinstance(code_impact_validation_issues, list):
+            debug_bundle.write_code_impact_validation_issues(item_obj.id, code_impact_validation_issues)
 
     combined_output = {
         **base_result,

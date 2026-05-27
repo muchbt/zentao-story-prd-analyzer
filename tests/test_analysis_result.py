@@ -5,7 +5,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from zentao_analyzer.analysis_result import AnalysisResult
+from zentao_analyzer.analysis_result import AnalysisResult, parse_requirement_interpretation, parse_code_impact, CodeImpactLocation
 from zentao_analyzer.zentao_client import ZentaoItem
 
 class TestAnalysisResult(unittest.TestCase):
@@ -103,6 +103,11 @@ class TestAnalysisResult(unittest.TestCase):
         self.assertEqual(result.error, "LLM timeout")
         self.assertTrue(result.is_insufficient_evidence())
 
+    def test_from_error_preserves_provided_requirement_source(self):
+        item = ZentaoItem(id="5", type="requirement", title="S", requirement_source="provided_requirement")
+        result = AnalysisResult.from_error(item, "LLM timeout")
+        self.assertEqual(result.requirement_source, "provided_requirement")
+
     def test_coerce_str_list_from_dict_items(self):
         item = ZentaoItem(id="10", type="requirement", title="R")
         data = {
@@ -125,6 +130,116 @@ class TestAnalysisResult(unittest.TestCase):
         self.assertTrue(all(isinstance(r, str) for r in result.recommendations))
         self.assertTrue(all(isinstance(v, str) for v in result.verification))
         self.assertTrue(all(isinstance(a, str) for a in result.affected_scope))
+
+
+class TestParseRequirementInterpretation(unittest.TestCase):
+    def test_valid_interpretation(self):
+        data = {
+            "summary": "需求摘要",
+            "scope": [{"text": "范围1", "source": "requirement"}],
+            "terms": [{"term": "MSD", "definition": "最小数据集", "source": "requirement"}],
+            "rules": [{"title": "规则1", "description": "描述", "source": "insufficient"}],
+            "scenarios": [{"title": "场景1", "precondition": "", "trigger": "触发", "expected_behavior": ["行为1"], "source": "requirement"}],
+            "matrix": {"title": "矩阵", "columns": ["A", "B"], "rows": [["1", "2"]], "source": "insufficient"},
+            "flow": {"title": "流程", "content": "描述", "source": "requirement"},
+            "pending_confirmations": ["待确认1"],
+        }
+        interp, issues = parse_requirement_interpretation(data)
+        self.assertIsNotNone(interp)
+        self.assertEqual(interp.summary, "需求摘要")
+        self.assertEqual(len(interp.scope), 1)
+        self.assertEqual(interp.scope[0].source, "requirement")
+        self.assertEqual(interp.terms[0].term, "MSD")
+        self.assertEqual(interp.rules[0].source, "insufficient")
+        self.assertEqual(len(interp.scenarios), 1)
+        self.assertEqual(interp.scenarios[0].expected_behavior, ["行为1"])
+        self.assertIsNotNone(interp.matrix)
+        self.assertEqual(interp.matrix.columns, ["A", "B"])
+        self.assertIsNotNone(interp.flow)
+        self.assertEqual(interp.flow.content, "描述")
+        self.assertEqual(interp.pending_confirmations, ["待确认1"])
+        self.assertEqual(issues, [])
+
+    def test_missing_interpretation(self):
+        interp, issues = parse_requirement_interpretation(None)
+        self.assertIsNone(interp)
+        self.assertIn("requirement_interpretation_missing", issues)
+
+    def test_partial_interpretation(self):
+        data = {"summary": "部分摘要"}
+        interp, issues = parse_requirement_interpretation(data)
+        self.assertIsNotNone(interp)
+        self.assertEqual(interp.summary, "部分摘要")
+        self.assertEqual(len(interp.scope), 0)
+        self.assertIsNone(interp.matrix)
+
+    def test_source_enum_filtering(self):
+        data = {
+            "scope": [{"text": "范围", "source": "invalid_source"}],
+            "rules": [{"title": "不可采信规则", "description": "描述", "source": "invalid_source"}],
+        }
+        interp, issues = parse_requirement_interpretation(data)
+        self.assertEqual(interp.scope[0].source, "insufficient")
+        self.assertEqual(interp.rules[0].title, "")
+        self.assertIn("requirement_interpretation_invalid_source", issues)
+
+    def test_invalid_list_field_is_reported_as_rich_content_issue(self):
+        interp, issues = parse_requirement_interpretation({"scope": "bad"})
+        self.assertIsNotNone(interp)
+        self.assertEqual(interp.scope, [])
+        self.assertIn("requirement_interpretation_invalid_scope", issues)
+
+
+class TestParseCodeImpact(unittest.TestCase):
+    def test_valid_code_impact(self):
+        data = {
+            "related_locations": [
+                {"component": "模块A", "path": "src/a.c", "line_start": 10, "line_end": 20, "symbol": "foo", "reason": "相关"},
+            ],
+            "impact_notes": ["模块A可能受影响"],
+        }
+        impact, issues = parse_code_impact(data)
+        self.assertIsNotNone(impact)
+        self.assertEqual(len(impact.related_locations), 1)
+        self.assertEqual(impact.related_locations[0].component, "模块A")
+        self.assertEqual(impact.impact_notes, ["模块A可能受影响"])
+        self.assertEqual(issues, [])
+
+    def test_missing_code_impact(self):
+        impact, issues = parse_code_impact(None)
+        self.assertIsNone(impact)
+        self.assertIn("code_impact_missing", issues)
+
+    def test_empty_locations(self):
+        data = {"related_locations": [], "impact_notes": []}
+        impact, issues = parse_code_impact(data)
+        self.assertIsNotNone(impact)
+        self.assertEqual(len(impact.related_locations), 0)
+
+    def test_invalid_location_list_field_is_reported(self):
+        impact, issues = parse_code_impact({"related_locations": "bad", "impact_notes": []})
+        self.assertIsNotNone(impact)
+        self.assertEqual(impact.related_locations, [])
+        self.assertIn("code_impact_invalid_related_locations", issues)
+
+    def test_location_without_path_is_preserved_for_location_validation(self):
+        impact, issues = parse_code_impact({
+            "related_locations": [{"component": "模块A", "path": "", "line_start": 1, "line_end": 1}],
+            "impact_notes": [],
+        })
+        self.assertEqual(issues, [])
+        self.assertEqual(len(impact.related_locations), 1)
+        self.assertEqual(impact.related_locations[0].path, "")
+
+
+class TestAnalysisResultRichContent(unittest.TestCase):
+    def test_default_rich_content_fields(self):
+        result = AnalysisResult(item_id="1", item_type="story", item_title="T")
+        self.assertEqual(result.requirement_source, "zentao")
+        self.assertIsNone(result.requirement_interpretation)
+        self.assertIsNone(result.code_impact)
+        self.assertEqual(result.rich_content_issues, [])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

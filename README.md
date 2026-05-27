@@ -24,7 +24,7 @@ python3 -m zentao_analyzer.main --help
 # 阶段一：只抓取禅道条目，stdout 输出 JSON
 python3 main.py --module requirement --id 5939
 
-# 阶段二到五：抓取禅道条目后分析本地代码，生成 PRD/ISSUE、summary 和 debug bundle
+# 阶段二到六：抓取禅道条目后分析本地代码，生成 PRD/ISSUE、summary 和 debug bundle
 python3 main.py --module requirement --id 5939 --analyze --repo-path .
 
 # 指定 Agent
@@ -34,23 +34,29 @@ python3 main.py --module requirement --id 5939 --analyze --repo-path . --agent c
 python3 main.py --module requirement --id 5939 --analyze --repo-path . \
   --clues calibration,LoadCalibration \
   --paths src/calib/import_config.c
+
+# 提供需求正文模式：不从禅道读取，直接用用户提交的完整需求生成 PRD
+python3 main.py --module requirement --id 5932 \
+  --title "Ecall功能的优先级定义" \
+  --requirement-file /tmp/requirement-5932.txt \
+  --analyze --repo-path . --agent claude
 ```
 
 运行前需要满足以下前置条件：
 
 - `zentao` CLI 已安装，并可在 `PATH` 中直接调用。
 - 已通过 `zentao login` 完成登录，或已配置 `ZENTAO_SERVER` 与 `ZENTAO_TOKEN` / `ZENTAO_USER` / `ZENTAO_PASSWORD`。如果 Token 失效，程序会以 exit code 2 退出并提示登录命令，登录后重试即可。
-- 可通过以下命令检查认证状态：
+- 可通过以下方式确认 profile 并让实际读取请求验证认证状态：
 
   ```bash
-  # 查看当前 profile（* 标记为活跃会话）
+  # 查看当前 profile（* 标记为活跃会话；该命令不验证 token）
   zentao profile
 
-  # 验证 token 是否有效（返回用户信息或认证错误）
-  zentao user --format json --machine-readable
+  # 直接读取待分析条目；成功即说明此次读取所需认证有效
+  zentao --format json --machine-readable get requirement <需求ID>
   ```
 
-  如果 `zentao user` 返回 `code: 1004` 或 "Token 已失效"，需要重新登录。注意 `zentao whoami` 命令不存在，请勿使用。
+  不要用 `zentao user` 检查登录状态：该命令读取用户模块，可能需要额外权限且不是当前会话身份查询。如果目标读取返回 `code: 1004` 或 "Token 已失效"，需要重新登录。注意 `zentao whoami` 命令不存在，请勿使用。
 - 使用 Claude/Codex/OpenCode 后端时，本机分别可执行 `claude`、`codex` 或 `opencode` CLI。
 - `--repo-path` 指向当前运行环境可访问的代码仓库。
 
@@ -94,6 +100,45 @@ run:
 - 禅道 CLI: https://www.zentao.net/book/zentaopms/2377.html
 - 禅道 SKILL: https://www.zentao.net/book/zentaopms/2315.html
 - Token 消耗模型: [`docs/TOKEN_COST.md`](docs/TOKEN_COST.md)（第一版，随分析方案演进需更新）
+
+### 提供需求正文模式
+
+除从禅道读取需求外，支持用户直接提供完整需求正文：
+
+```bash
+python3 main.py --module requirement \
+  --id 5932 \
+  --title "Ecall功能的优先级定义(CN&EU) - TCAM Priority and Parallelism of Services" \
+  --requirement-file /tmp/requirement-5932.txt \
+  --analyze --repo-path . --agent claude --quiet
+```
+
+规则：
+
+- `--requirement-file` 仅支持 `requirement` 或 `story` 模块。
+- `--requirement-file` 需要同时提供非空 `--id` 和 `--title`。
+- 该模式不调用禅道读取或登录；ID 仅作为输出关联标识。
+- 文件必须可读且内容非空，否则在调用 Agent 前失败。
+- `--requirement-file` 与 `--login`、禅道认证参数和列表查询参数不能同时使用。
+- 产物中来源字段标识为 `provided_requirement`。
+
+### 深度 PRD 内容
+
+Feature Item 的 PRD 包含固定章节：
+
+1. **概述**：需求摘要、范围、术语定义、来源信息
+2. **需求详细描述**：业务规则、场景与流程、关系或并发矩阵、待确认事项
+3. **功能影响分析**：现有代码关联、实现完成度、关键代码证据
+4. **需求对照表**：需求点完成情况、差异与缺口
+5. **建议实现策略**：代码变更建议、测试要点（明确为建议，不代表已有实现）
+6. **参考信息**：追踪信息
+
+内容边界：
+
+- Requirement Interpretation（需求解读）仅依据 Requirement Source 整理。`source: "code_context"` 标记为"代码侧候选上下文，不构成需求定义"；`source: "insufficient"` 标记为"原始需求未提供足够信息"。
+- Code Impact（代码影响）的关联位置与完成度证据分开存储；关联位置不作为完成度证据。
+- Completion Assessment（完成度）严格依据有效 Requirement Point 和 Code Evidence。
+- Interpretation 或 Code Impact 缺失时，PRD 仍生成，对应章节显示"分析结果未提供有效内容"。
 
 ---
 

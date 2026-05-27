@@ -6,7 +6,7 @@ from typing import Optional
 import re
 
 from .zentao_client import ZentaoItem
-from .analysis_result import AnalysisResult, RequirementPoint, RPStatus
+from .analysis_result import AnalysisResult, RequirementPoint, RPStatus, CodeImpactLocation
 
 
 @dataclasses.dataclass
@@ -66,6 +66,181 @@ def _unknown_type_notice(item_type: str) -> str:
     if item_type not in ("story", "requirement", "bug", "ticket", "feedback"):
         return f"\n> 未知条目类型 `{item_type}`，按问题类文档生成。\n"
     return ""
+
+
+_INSUFFICIENT_MSG = "原始需求未提供足够信息"
+_NO_CONTENT_MSG = "分析结果未提供有效内容"
+
+
+def _source_label(source: str) -> str:
+    if source == "code_context":
+        return " *（代码侧候选上下文，不构成需求定义）*"
+    return ""
+
+
+def _interpretation_field_invalid(analysis: AnalysisResult, *fields: str) -> bool:
+    issues = set(getattr(analysis, "rich_content_issues", []) or [])
+    if "requirement_interpretation_invalid_schema" in issues:
+        return True
+    return any(f"requirement_interpretation_invalid_{field}" in issues for field in fields)
+
+
+def _render_scope(analysis: AnalysisResult) -> str:
+    if _interpretation_field_invalid(analysis, "scope"):
+        return _NO_CONTENT_MSG
+    interp = analysis.requirement_interpretation
+    if interp is None:
+        return _NO_CONTENT_MSG
+    if not interp.scope:
+        return _INSUFFICIENT_MSG
+    lines = []
+    for entry in interp.scope:
+        if entry.source == "insufficient":
+            lines.append(f"- {_INSUFFICIENT_MSG}")
+        else:
+            label = _source_label(entry.source)
+            lines.append(f"- {entry.text}{label}")
+    return "\n".join(lines) if lines else _INSUFFICIENT_MSG
+
+
+def _render_terms(analysis: AnalysisResult) -> str:
+    if _interpretation_field_invalid(analysis, "terms"):
+        return _NO_CONTENT_MSG
+    interp = analysis.requirement_interpretation
+    if interp is None:
+        return _NO_CONTENT_MSG
+    if not interp.terms:
+        return _INSUFFICIENT_MSG
+    rows = ["| 术语 | 定义 |", "|---|---|"]
+    for term in interp.terms:
+        if term.source == "insufficient":
+            rows.append(f"| {term.term or '（未提供）'} | {_INSUFFICIENT_MSG} |")
+        else:
+            label = _source_label(term.source)
+            rows.append(f"| {term.term}{label} | {term.definition or '（未提供）'} |")
+    return "\n".join(rows)
+
+
+def _render_rules(analysis: AnalysisResult) -> str:
+    if _interpretation_field_invalid(analysis, "rules"):
+        return _NO_CONTENT_MSG
+    interp = analysis.requirement_interpretation
+    if interp is None:
+        return _NO_CONTENT_MSG
+    if not interp.rules:
+        return _INSUFFICIENT_MSG
+    lines = []
+    for rule in interp.rules:
+        if rule.source == "insufficient":
+            lines.append(f"- **{rule.title or '（未命名）'}**: {_INSUFFICIENT_MSG}")
+        else:
+            label = _source_label(rule.source)
+            desc = rule.description or "（未提供描述）"
+            lines.append(f"- **{rule.title}**{label}: {desc}")
+    return "\n".join(lines) if lines else _INSUFFICIENT_MSG
+
+
+def _render_scenarios_and_flow(analysis: AnalysisResult) -> str:
+    if _interpretation_field_invalid(analysis, "scenarios", "flow"):
+        return _NO_CONTENT_MSG
+    interp = analysis.requirement_interpretation
+    if interp is None:
+        return _NO_CONTENT_MSG
+    parts = []
+    if interp.scenarios:
+        for scenario in interp.scenarios:
+            if scenario.source == "insufficient":
+                parts.append(f"#### {scenario.title or '（未命名）'}\n\n{_INSUFFICIENT_MSG}")
+            else:
+                label = _source_label(scenario.source)
+                lines = [f"#### {scenario.title}{label}"]
+                if scenario.precondition:
+                    lines.append(f"- 前置条件: {scenario.precondition}")
+                if scenario.trigger:
+                    lines.append(f"- 触发条件: {scenario.trigger}")
+                if scenario.expected_behavior:
+                    lines.append("- 期望行为:")
+                    for behavior in scenario.expected_behavior:
+                        lines.append(f"  - {behavior}")
+                parts.append("\n".join(lines))
+    if interp.flow:
+        if interp.flow.source == "insufficient":
+            parts.append(f"#### {interp.flow.title or '流程'}\n\n{_INSUFFICIENT_MSG}")
+        else:
+            label = _source_label(interp.flow.source)
+            flow_content = interp.flow.content or "（未提供）"
+            parts.append(f"#### {interp.flow.title or '流程'}{label}\n\n{flow_content}")
+    if not parts:
+        return _INSUFFICIENT_MSG
+    return "\n\n".join(parts)
+
+
+def _render_matrix(analysis: AnalysisResult) -> str:
+    if _interpretation_field_invalid(analysis, "matrix"):
+        return _NO_CONTENT_MSG
+    interp = analysis.requirement_interpretation
+    if interp is None:
+        return _NO_CONTENT_MSG
+    if interp.matrix is None:
+        return _INSUFFICIENT_MSG
+    matrix = interp.matrix
+    if matrix.source == "insufficient":
+        return _INSUFFICIENT_MSG
+    if not matrix.columns or not matrix.rows:
+        return _INSUFFICIENT_MSG
+    label = _source_label(matrix.source)
+    header = "| " + " | ".join(matrix.columns) + " |"
+    sep = "| " + " | ".join("---" for _ in matrix.columns) + " |"
+    rows = [header, sep]
+    for row in matrix.rows:
+        padded = row + [""] * (len(matrix.columns) - len(row))
+        rows.append("| " + " | ".join(padded[:len(matrix.columns)]) + " |")
+    title_line = f"**{matrix.title}**{label}" if matrix.title else ""
+    if title_line:
+        return title_line + "\n\n" + "\n".join(rows)
+    return "\n".join(rows)
+
+
+def _render_pending_confirmations(analysis: AnalysisResult) -> str:
+    if _interpretation_field_invalid(analysis, "pending_confirmations"):
+        return _NO_CONTENT_MSG
+    interp = analysis.requirement_interpretation
+    if interp is None:
+        return _NO_CONTENT_MSG
+    if not interp.pending_confirmations:
+        return _INSUFFICIENT_MSG
+    return "\n".join(f"- {item}" for item in interp.pending_confirmations)
+
+
+def _render_code_impact_table(analysis: AnalysisResult) -> str:
+    impact = analysis.code_impact
+    if impact is None or not impact.related_locations:
+        return _NO_CONTENT_MSG
+    validated = [loc for loc in impact.related_locations
+                 if loc.path and loc.line_start > 0 and loc.line_end > 0]
+    if not validated:
+        return _NO_CONTENT_MSG
+    rows = ["| 组件 | 文件 | 行号 | 符号 | 说明 |", "|---|---|---:|---|---|"]
+    for loc in validated:
+        line_range = f"{loc.line_start}-{loc.line_end}"
+        rows.append(f"| {loc.component or ''} | {loc.path} | {line_range} | {loc.symbol or ''} | {loc.reason or ''} |")
+    result = "\n".join(rows)
+    if impact.impact_notes:
+        notes = "\n".join(f"- {n}" for n in impact.impact_notes)
+        result += f"\n\n补充说明：\n\n{notes}"
+    return result
+
+
+def _render_interpretation_summary(analysis: AnalysisResult, item_description: str = "") -> str:
+    if _interpretation_field_invalid(analysis, "summary"):
+        return _NO_CONTENT_MSG
+    if analysis.requirement_interpretation and analysis.requirement_interpretation.summary:
+        return analysis.requirement_interpretation.summary
+    if analysis.understanding_summary:
+        return analysis.understanding_summary
+    if item_description:
+        return item_description
+    return _build_llm_summary(analysis)
 
 
 def _track_section(document_path: str, writeback_status: str) -> str:
@@ -161,7 +336,8 @@ def validate_document_consistency(analysis: AnalysisResult, document: DocumentRe
         issues.append("unexpected_diagnostic_banner")
     locations = getattr(analysis, "cited_evidence_locations", []) or []
     if locations:
-        if "## 关键代码证据" not in content:
+        evidence_heading = "### 3.3 关键代码证据" if document.document_type == "PRD" else "## 关键代码证据"
+        if evidence_heading not in content:
             issues.append("missing_key_evidence_section")
         if not any(location.path and location.path in content for location in locations):
             issues.append("missing_cited_evidence_path")
@@ -179,13 +355,28 @@ def _source_info(item: ZentaoItem, generated_at: str) -> str:
 """
 
 
+def _prd_source_info(item: ZentaoItem, generated_at: str, requirement_source: str = "zentao") -> str:
+    source_desc = "禅道" if requirement_source == "zentao" else "用户提交"
+    return f"""### 1.4 来源信息
+
+- 条目类型: {item.type}
+- 条目 ID: {item.id}
+- 需求来源: {source_desc}
+- 状态: {item.status}
+- 优先级: {item.priority or "未提供"}
+- 生成时间: {generated_at}
+"""
+
+
+def _prd_track_section(document_path: str, writeback_status: str) -> str:
+    return f"""### 6.1 追踪信息
+
+- 输出文件: {document_path}
+- 回写禅道: {writeback_status}
+"""
+
+
 def _render_prd(item: ZentaoItem, analysis: AnalysisResult, generated_at: str, document_path: str, writeback_status: str) -> str:
-    if analysis.gaps:
-        gaps = "\n".join(f"- {g}" for g in analysis.gaps)
-    elif analysis.is_insufficient_evidence():
-        gaps = "无法确定是否存在缺口"
-    else:
-        gaps = "无"
     gaps = _render_prd_gaps(analysis)
     recommendations = "\n".join(f"- {r}" for r in analysis.recommendations) if analysis.recommendations else "无"
     verification = "\n".join(f"- {v}" for v in analysis.verification) if analysis.verification else "无"
@@ -194,46 +385,99 @@ def _render_prd(item: ZentaoItem, analysis: AnalysisResult, generated_at: str, d
     if analysis.error or analysis.is_insufficient_evidence():
         diagnostic_banner = "> 诊断文档：当前条目未能生成完整 PRD。\n\n"
 
-    rp_table = _render_requirement_points_table(analysis)
-    rp_section = ""
-    if rp_table:
-        rp_section = f"\n## 需求点完成情况\n\n{rp_table}\n"
+    rp_table = _render_requirement_points_table(analysis) or "未提取结构化需求点。"
+    scope = _render_scope(analysis)
+    terms = _render_terms(analysis)
+    summary_text = _render_interpretation_summary(analysis, item.description or "")
+    source_description = item.description or _INSUFFICIENT_MSG
+    rules = _render_rules(analysis)
+    scenarios = _render_scenarios_and_flow(analysis)
+    matrix = _render_matrix(analysis)
+    pending = _render_pending_confirmations(analysis)
+    source_info = _prd_source_info(item, generated_at, analysis.requirement_source)
+    code_impact = _render_code_impact_table(analysis)
 
     return f"""# PRD: {item.title}
 
-{diagnostic_banner}{_source_info(item, generated_at)}
+{diagnostic_banner}## 1. 概述
 
-## 原始需求摘要
+### 1.1 需求摘要
 
-{item.description or "未提供"}
+{summary_text}
 
-## LLM 理解摘要
+### 1.2 范围
 
-{_build_llm_summary(analysis)}
+{scope}
 
-## 实现完成度
+### 1.3 术语定义
+
+{terms}
+
+{source_info}
+
+## 2. 需求详细描述
+
+原始需求正文：
+
+{source_description}
+
+### 2.1 业务规则
+
+{rules}
+
+### 2.2 场景与流程
+
+{scenarios}
+
+### 2.3 关系或并发矩阵
+
+{matrix}
+
+### 2.4 待确认事项
+
+{pending}
+
+## 3. 功能影响分析
+
+### 3.1 现有代码关联
+
+{code_impact}
+
+### 3.2 实现完成度
 
 - **结论**：{analysis.conclusion or "未判断"}
 - **优先级**：{analysis.priority or "未评估"}
 - **可信度**：{analysis.confidence or "未评估"}
-{rp_section}
-## 关键代码证据
+
+### 3.3 关键代码证据
 
 {_render_prd_evidence(analysis)}
 
-## 差异与缺口
+## 4. 需求对照表
+
+### 4.1 需求点完成情况
+
+{rp_table}
+
+### 4.2 差异与缺口
 
 {gaps}
 
-## 修改建议
+## 5. 建议实现策略
+
+> 以下建议为参考性质，不构成现有实现描述。
+
+### 5.1 代码变更建议
 
 {recommendations}
 
-## 验证建议
+### 5.2 测试要点
 
 {verification}
 
-{_track_section(document_path, writeback_status)}
+## 6. 参考信息
+
+{_prd_track_section(document_path, writeback_status)}
 
 ---
 *本文档由 zentao-story-prd-analyzer 自动生成，仅供参考。*

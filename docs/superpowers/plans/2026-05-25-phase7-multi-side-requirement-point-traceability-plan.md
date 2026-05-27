@@ -1,6 +1,6 @@
 # 阶段七：多侧代码分析与需求点追溯 Implementation Plan
 
-> **暂停说明（2026-05-26）**：本计划基于“阶段七同时引入 `Requirement Point` 与多侧能力”的旧边界，现已失效并暂停执行。`Requirement Point` 将作为阶段六独立能力另写实施计划；阶段七计划将在规格收缩为多侧范围与责任侧扩展后重写。
+> **废弃说明（2026-05-27）**：本计划及其多侧范围方向均未进入实现，且已由新的“阶段七：深度 PRD 生成与双输入来源”取代。本文仅保留为历史记录，不得作为实施依据。
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -14,7 +14,7 @@
 
 ## 实施约束
 
-- 本计划已暂停，不得作为实施依据；边界调整中的规格见 `docs/superpowers/specs/2026-05-26-phase7-multi-side-scope-responsibility-design.md`。
+- 本计划已废弃，不得作为实施依据；替代设计与实施计划使用新的阶段七文档。
 - 需求预期行为仅来自禅道原始描述；不得实现已废弃的补充需求内容入口。
 - 阶段七仅在用户通过 `--code-side` 或 `--code-sides-file` 显式配置 Code Side 后激活；不得扫描目录名称自动开启。
 - 普通单仓库分析的既有 stdout JSON、PRD/ISSUE、Prompt 与测试行为必须保持不变。

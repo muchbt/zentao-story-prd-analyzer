@@ -5,6 +5,140 @@ from typing import Any, Dict, List, Optional, Tuple
 from .zentao_client import ZentaoItem
 
 
+VALID_SOURCE_ENUM = {"requirement", "code_context", "insufficient"}
+
+
+@dataclasses.dataclass
+class InterpretationEntry:
+    text: str = ""
+    source: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"text": self.text, "source": self.source}
+
+
+@dataclasses.dataclass
+class InterpretationTerm:
+    term: str = ""
+    definition: str = ""
+    source: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"term": self.term, "definition": self.definition, "source": self.source}
+
+
+@dataclasses.dataclass
+class InterpretationRule:
+    title: str = ""
+    description: str = ""
+    source: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"title": self.title, "description": self.description, "source": self.source}
+
+
+@dataclasses.dataclass
+class RequirementScenario:
+    title: str = ""
+    precondition: str = ""
+    trigger: str = ""
+    expected_behavior: List[str] = dataclasses.field(default_factory=list)
+    source: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "title": self.title,
+            "precondition": self.precondition,
+            "trigger": self.trigger,
+            "expected_behavior": self.expected_behavior,
+            "source": self.source,
+        }
+
+
+@dataclasses.dataclass
+class RequirementMatrix:
+    title: str = ""
+    columns: List[str] = dataclasses.field(default_factory=list)
+    rows: List[List[str]] = dataclasses.field(default_factory=list)
+    source: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"title": self.title, "columns": self.columns, "rows": self.rows, "source": self.source}
+
+
+@dataclasses.dataclass
+class RequirementFlow:
+    title: str = ""
+    content: str = ""
+    source: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"title": self.title, "content": self.content, "source": self.source}
+
+
+@dataclasses.dataclass
+class RequirementInterpretation:
+    summary: str = ""
+    scope: List[InterpretationEntry] = dataclasses.field(default_factory=list)
+    terms: List[InterpretationTerm] = dataclasses.field(default_factory=list)
+    rules: List[InterpretationRule] = dataclasses.field(default_factory=list)
+    scenarios: List[RequirementScenario] = dataclasses.field(default_factory=list)
+    matrix: Optional[RequirementMatrix] = None
+    flow: Optional[RequirementFlow] = None
+    pending_confirmations: List[str] = dataclasses.field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        d: Dict[str, Any] = {
+            "summary": self.summary,
+            "scope": [e.to_dict() for e in self.scope],
+            "terms": [t.to_dict() for t in self.terms],
+            "rules": [r.to_dict() for r in self.rules],
+            "scenarios": [s.to_dict() for s in self.scenarios],
+            "pending_confirmations": self.pending_confirmations,
+        }
+        if self.matrix is not None:
+            d["matrix"] = self.matrix.to_dict()
+        else:
+            d["matrix"] = None
+        if self.flow is not None:
+            d["flow"] = self.flow.to_dict()
+        else:
+            d["flow"] = None
+        return d
+
+
+@dataclasses.dataclass
+class CodeImpactLocation:
+    component: str = ""
+    path: str = ""
+    line_start: int = 0
+    line_end: int = 0
+    symbol: str = ""
+    reason: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "component": self.component,
+            "path": self.path,
+            "line_start": self.line_start,
+            "line_end": self.line_end,
+            "symbol": self.symbol,
+            "reason": self.reason,
+        }
+
+
+@dataclasses.dataclass
+class CodeImpactAnalysis:
+    related_locations: List[CodeImpactLocation] = dataclasses.field(default_factory=list)
+    impact_notes: List[str] = dataclasses.field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "related_locations": [loc.to_dict() for loc in self.related_locations],
+            "impact_notes": self.impact_notes,
+        }
+
+
 @dataclasses.dataclass
 class EvidenceLocation:
     path: str
@@ -285,6 +419,214 @@ def correct_rps_without_valid_evidence(rps: List[RequirementPoint]) -> List[Requ
     return rps
 
 
+def _coerce_source(value: Any) -> str:
+    s = _coerce_str(value)
+    return s if s in VALID_SOURCE_ENUM else "insufficient"
+
+
+def _add_issue(issues: List[str], issue: str) -> None:
+    if issue not in issues:
+        issues.append(issue)
+
+
+def _parse_interpretation_list(
+    data: Dict[str, Any], field: str, parser: Any, issues: List[str]
+) -> List[Any]:
+    if field not in data:
+        return []
+    raw_items = data.get(field)
+    if not isinstance(raw_items, list):
+        _add_issue(issues, f"requirement_interpretation_invalid_{field}")
+        return []
+    parsed: List[Any] = []
+    for item in raw_items:
+        if not isinstance(item, dict):
+            _add_issue(issues, f"requirement_interpretation_invalid_{field}")
+            parsed.append(parser({"source": "insufficient"}))
+            continue
+        if _coerce_str(item.get("source", "")) not in VALID_SOURCE_ENUM:
+            _add_issue(issues, "requirement_interpretation_invalid_source")
+            parsed.append(parser({"source": "insufficient"}))
+            continue
+        parsed.append(parser(item))
+    return parsed
+
+
+def _parse_interpretation_entry(item: Any) -> InterpretationEntry:
+    if not isinstance(item, dict):
+        return InterpretationEntry(text=_coerce_str(item), source="insufficient")
+    return InterpretationEntry(
+        text=_coerce_str(item.get("text", "")),
+        source=_coerce_source(item.get("source", "")),
+    )
+
+
+def _parse_interpretation_term(item: Any) -> InterpretationTerm:
+    if not isinstance(item, dict):
+        return InterpretationTerm(term=_coerce_str(item), definition="", source="insufficient")
+    return InterpretationTerm(
+        term=_coerce_str(item.get("term", "")),
+        definition=_coerce_str(item.get("definition", "")),
+        source=_coerce_source(item.get("source", "")),
+    )
+
+
+def _parse_interpretation_rule(item: Any) -> InterpretationRule:
+    if not isinstance(item, dict):
+        return InterpretationRule(title=_coerce_str(item), description="", source="insufficient")
+    return InterpretationRule(
+        title=_coerce_str(item.get("title", "")),
+        description=_coerce_str(item.get("description", "")),
+        source=_coerce_source(item.get("source", "")),
+    )
+
+
+def _parse_requirement_scenario(item: Any) -> RequirementScenario:
+    if not isinstance(item, dict):
+        return RequirementScenario(title=_coerce_str(item), source="insufficient")
+    behavior = item.get("expected_behavior", [])
+    if isinstance(behavior, list):
+        behavior = [_coerce_str(b) for b in behavior if _coerce_str(b)]
+    else:
+        behavior = []
+    return RequirementScenario(
+        title=_coerce_str(item.get("title", "")),
+        precondition=_coerce_str(item.get("precondition", "")),
+        trigger=_coerce_str(item.get("trigger", "")),
+        expected_behavior=behavior,
+        source=_coerce_source(item.get("source", "")),
+    )
+
+
+def _parse_requirement_matrix(data: Any) -> Optional[RequirementMatrix]:
+    if not isinstance(data, dict):
+        return None
+    columns = data.get("columns", [])
+    if not isinstance(columns, list):
+        columns = []
+    columns = [_coerce_str(c) for c in columns if _coerce_str(c)]
+    rows_data = data.get("rows", [])
+    if not isinstance(rows_data, list):
+        rows_data = []
+    rows = []
+    for row in rows_data:
+        if isinstance(row, list):
+            rows.append([_coerce_str(c) for c in row])
+    return RequirementMatrix(
+        title=_coerce_str(data.get("title", "")),
+        columns=columns,
+        rows=rows,
+        source=_coerce_source(data.get("source", "")),
+    )
+
+
+def _parse_requirement_flow(data: Any) -> Optional[RequirementFlow]:
+    if not isinstance(data, dict):
+        return None
+    return RequirementFlow(
+        title=_coerce_str(data.get("title", "")),
+        content=_coerce_str(data.get("content", "")),
+        source=_coerce_source(data.get("source", "")),
+    )
+
+
+def parse_requirement_interpretation(data: Any) -> Tuple[Optional[RequirementInterpretation], List[str]]:
+    issues: List[str] = []
+    if data is None:
+        return None, ["requirement_interpretation_missing"]
+    if not isinstance(data, dict):
+        return None, ["requirement_interpretation_invalid_schema"]
+    if "summary" in data and not isinstance(data.get("summary"), str):
+        _add_issue(issues, "requirement_interpretation_invalid_summary")
+    scope = _parse_interpretation_list(data, "scope", _parse_interpretation_entry, issues)
+    terms = _parse_interpretation_list(data, "terms", _parse_interpretation_term, issues)
+    rules = _parse_interpretation_list(data, "rules", _parse_interpretation_rule, issues)
+    scenarios = _parse_interpretation_list(data, "scenarios", _parse_requirement_scenario, issues)
+    for scenario in data.get("scenarios", []) if isinstance(data.get("scenarios", []), list) else []:
+        if isinstance(scenario, dict) and "expected_behavior" in scenario and not isinstance(scenario.get("expected_behavior"), list):
+            _add_issue(issues, "requirement_interpretation_invalid_scenarios")
+    matrix_data = data.get("matrix")
+    parsed_matrix_data = matrix_data
+    if matrix_data is not None:
+        if not isinstance(matrix_data, dict):
+            _add_issue(issues, "requirement_interpretation_invalid_matrix")
+        else:
+            if _coerce_str(matrix_data.get("source", "")) not in VALID_SOURCE_ENUM:
+                _add_issue(issues, "requirement_interpretation_invalid_source")
+                parsed_matrix_data = {"source": "insufficient"}
+            if not isinstance(matrix_data.get("columns", []), list) or not isinstance(matrix_data.get("rows", []), list):
+                _add_issue(issues, "requirement_interpretation_invalid_matrix")
+    flow_data = data.get("flow")
+    parsed_flow_data = flow_data
+    if flow_data is not None:
+        if not isinstance(flow_data, dict):
+            _add_issue(issues, "requirement_interpretation_invalid_flow")
+        elif _coerce_str(flow_data.get("source", "")) not in VALID_SOURCE_ENUM:
+            _add_issue(issues, "requirement_interpretation_invalid_source")
+            parsed_flow_data = {"source": "insufficient"}
+    matrix = _parse_requirement_matrix(parsed_matrix_data)
+    flow = _parse_requirement_flow(parsed_flow_data)
+    pending = data.get("pending_confirmations", [])
+    if not isinstance(pending, list):
+        _add_issue(issues, "requirement_interpretation_invalid_pending_confirmations")
+        pending = []
+    pending = [_coerce_str(p) for p in pending if _coerce_str(p)]
+    interp = RequirementInterpretation(
+        summary=_coerce_str(data.get("summary", "")),
+        scope=scope,
+        terms=terms,
+        rules=rules,
+        scenarios=scenarios,
+        matrix=matrix,
+        flow=flow,
+        pending_confirmations=pending,
+    )
+    return interp, issues
+
+
+def _parse_code_impact_location(item: Any) -> Optional[CodeImpactLocation]:
+    if not isinstance(item, dict):
+        return None
+    path = _coerce_str(item.get("path", ""))
+    line_start = _safe_int(item.get("line_start"))
+    line_end = _safe_int(item.get("line_end"), line_start)
+    return CodeImpactLocation(
+        component=_coerce_str(item.get("component", "")),
+        path=path,
+        line_start=line_start,
+        line_end=line_end,
+        symbol=_coerce_str(item.get("symbol", "")),
+        reason=_coerce_str(item.get("reason", "")),
+    )
+
+
+def parse_code_impact(data: Any) -> Tuple[Optional[CodeImpactAnalysis], List[str]]:
+    issues: List[str] = []
+    if data is None:
+        return None, ["code_impact_missing"]
+    if not isinstance(data, dict):
+        return None, ["code_impact_invalid_schema"]
+    locs_data = data.get("related_locations", [])
+    if not isinstance(locs_data, list):
+        _add_issue(issues, "code_impact_invalid_related_locations")
+        locs_data = []
+    raw_locs: List[CodeImpactLocation] = []
+    for item in locs_data:
+        loc = _parse_code_impact_location(item)
+        if loc is not None:
+            raw_locs.append(loc)
+        else:
+            _add_issue(issues, "code_impact_invalid_related_locations")
+    notes_data = data.get("impact_notes", [])
+    if not isinstance(notes_data, list):
+        _add_issue(issues, "code_impact_invalid_impact_notes")
+        notes_data = []
+    elif any(not isinstance(note, str) for note in notes_data):
+        _add_issue(issues, "code_impact_invalid_impact_notes")
+    impact_notes = [_coerce_str(n) for n in notes_data if _coerce_str(n)]
+    return CodeImpactAnalysis(related_locations=raw_locs, impact_notes=impact_notes), issues
+
+
 def _safe_int(value: Any, default: int = 0) -> int:
     try:
         return int(value)
@@ -443,6 +785,11 @@ class AnalysisResult:
     analysis_status: str = ""
     analysis_status_detail: str = ""
     recommended_action: str = ""
+    requirement_source: str = "zentao"
+    requirement_interpretation: Optional[RequirementInterpretation] = None
+    code_impact: Optional[CodeImpactAnalysis] = None
+    rich_content_issues: List[str] = dataclasses.field(default_factory=list)
+    code_impact_validation_issues: List[EvidenceValidationIssue] = dataclasses.field(default_factory=list)
 
     @classmethod
     def from_llm_json(cls, item: ZentaoItem, data: Dict[str, Any], raw_response: str = "") -> "AnalysisResult":
@@ -478,6 +825,7 @@ class AnalysisResult:
             error=error,
             error_kind=error_kind,
             raw_response=raw_response,
+            requirement_source=getattr(item, "requirement_source", "zentao") or "zentao",
         )
 
     def is_insufficient_evidence(self) -> bool:

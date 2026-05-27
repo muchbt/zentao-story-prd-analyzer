@@ -6,7 +6,21 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from zentao_analyzer.analysis_result import AnalysisResult, EvidenceLocation
+from zentao_analyzer.analysis_result import (
+    AnalysisResult,
+    CodeImpactAnalysis,
+    CodeImpactLocation,
+    EvidenceLocation,
+    InterpretationEntry,
+    InterpretationRule,
+    InterpretationTerm,
+    RequirementInterpretation,
+    RequirementMatrix,
+    RequirementScenario,
+    RequirementFlow,
+    RequirementPoint,
+    RPStatus,
+)
 from zentao_analyzer.document_generator import generate_document, sanitize_title, DocumentResult, validate_document_consistency
 from zentao_analyzer.zentao_client import ZentaoItem
 
@@ -34,14 +48,32 @@ class TestDocumentGenerator(unittest.TestCase):
             with open(doc.document_path, encoding="utf-8") as f:
                 content = f.read()
             self.assertIn("# PRD: 新增 登录", content)
-            self.assertIn("## 来源信息", content)
+            self.assertIn("## 1. 概述", content)
+            self.assertIn("### 1.1 需求摘要", content)
+            self.assertIn("### 1.2 范围", content)
+            self.assertIn("### 1.3 术语定义", content)
+            self.assertIn("### 1.4 来源信息", content)
             self.assertIn("条目类型: story", content)
-            self.assertIn("## LLM 理解摘要", content)
+            self.assertIn("需求来源: 禅道", content)
+            self.assertIn("## 2. 需求详细描述", content)
+            self.assertIn("### 2.1 业务规则", content)
+            self.assertIn("### 2.2 场景与流程", content)
+            self.assertIn("### 2.3 关系或并发矩阵", content)
+            self.assertIn("### 2.4 待确认事项", content)
             self.assertIn("部分完成", content)
-            self.assertIn("## 关键代码证据", content)
+            self.assertIn("## 3. 功能影响分析", content)
+            self.assertIn("### 3.1 现有代码关联", content)
+            self.assertIn("### 3.2 实现完成度", content)
+            self.assertIn("### 3.3 关键代码证据", content)
             self.assertIn("无可定位代码证据", content)
             self.assertIn("- src/auth.py: login exists", content)
-            self.assertIn("## 追踪信息", content)
+            self.assertIn("## 4. 需求对照表", content)
+            self.assertIn("## 5. 建议实现策略", content)
+            self.assertIn("以下建议为参考性质", content)
+            self.assertIn("### 5.1 代码变更建议", content)
+            self.assertIn("### 5.2 测试要点", content)
+            self.assertIn("## 6. 参考信息", content)
+            self.assertIn("### 6.1 追踪信息", content)
             self.assertIn("回写禅道: not_implemented", content)
 
     def test_bug_generates_issue(self):
@@ -118,10 +150,10 @@ class TestDocumentGenerator(unittest.TestCase):
 
             with open(doc.document_path, encoding="utf-8") as f:
                 content = f.read()
-            summary = content.split("## LLM 理解摘要", 1)[1].split("## 实现完成度", 1)[0]
-            self.assertIn("TCAM 需要在通话结束后进入 25 分钟回拨模式。", summary)
-            self.assertNotIn("src/xcall.c", summary)
-            self.assertNotIn("补充来电拒绝逻辑", summary)
+            section_1_1 = content.split("### 1.1 需求摘要", 1)[1].split("###", 1)[0]
+            self.assertIn("TCAM 需要在通话结束后进入 25 分钟回拨模式。", section_1_1)
+            self.assertNotIn("src/xcall.c", section_1_1)
+            self.assertNotIn("补充来电拒绝逻辑", section_1_1)
 
     def test_document_consistency_reports_diagnostic_banner_on_success(self):
         with tempfile.TemporaryDirectory() as td:
@@ -160,7 +192,8 @@ class TestDocumentGenerator(unittest.TestCase):
             self.assertIn("LLM 调用失败", content)
             self.assertIn("无可定位代码证据；当前无法验证实现状态。", content)
             self.assertIn("无法确定是否存在缺口", content)
-            self.assertIn("## 追踪信息", content)
+            self.assertIn("## 6. 参考信息", content)
+            self.assertIn("### 6.1 追踪信息", content)
             self.assertIn("回写禅道: not_implemented", content)
 
     def test_diagnostic_document_still_in_issue(self):
@@ -201,6 +234,283 @@ class TestDocumentGenerator(unittest.TestCase):
     def test_sanitize_title(self):
         self.assertEqual(sanitize_title("A/B C__中文!"), "A_B_C_中文")
         self.assertEqual(sanitize_title("!!!"), "untitled")
+
+    def test_prd_contains_all_six_chapters(self):
+        with tempfile.TemporaryDirectory() as td:
+            item = ZentaoItem(id="10", type="requirement", title="完整章节", description="需求描述")
+            analysis = AnalysisResult(
+                item_id="10", item_type="requirement", item_title="完整章节",
+                conclusion="完成", evidence=["src/a.c:1-10 ok"], confidence="高",
+            )
+            doc = generate_document(item, analysis, output_root=td)
+            with open(doc.document_path, encoding="utf-8") as f:
+                content = f.read()
+            for heading in [
+                "## 1. 概述", "### 1.1 需求摘要", "### 1.2 范围",
+                "### 1.3 术语定义", "### 1.4 来源信息",
+                "## 2. 需求详细描述", "### 2.1 业务规则", "### 2.2 场景与流程",
+                "### 2.3 关系或并发矩阵", "### 2.4 待确认事项",
+                "## 3. 功能影响分析", "### 3.1 现有代码关联",
+                "### 3.2 实现完成度", "### 3.3 关键代码证据",
+                "## 4. 需求对照表", "### 4.1 需求点完成情况", "### 4.2 差异与缺口",
+                "## 5. 建议实现策略", "### 5.1 代码变更建议", "### 5.2 测试要点",
+                "## 6. 参考信息", "### 6.1 追踪信息",
+            ]:
+                self.assertIn(heading, content, f"Missing heading: {heading}")
+
+    def test_prd_renders_interpretation_fields(self):
+        with tempfile.TemporaryDirectory() as td:
+            item = ZentaoItem(id="11", type="story", title="解释字段", description="用户登录功能")
+            interp = RequirementInterpretation(
+                summary="用户可在登录页面输入凭据并认证",
+                scope=[
+                    InterpretationEntry(text="支持手机号登录", source="requirement"),
+                    InterpretationEntry(text="支持邮箱登录", source="code_context"),
+                ],
+                terms=[
+                    InterpretationTerm(term="SSO", definition="单点登录", source="requirement"),
+                    InterpretationTerm(term="Token", definition="认证令牌", source="code_context"),
+                ],
+                rules=[
+                    InterpretationRule(title="密码强度", description="至少8位", source="requirement"),
+                    InterpretationRule(title="重试限制", description="5次后锁定", source="code_context"),
+                ],
+                scenarios=[
+                    RequirementScenario(
+                        title="正常登录", precondition="用户在登录页", trigger="点击登录",
+                        expected_behavior=["跳转首页", "显示欢迎信息"], source="requirement",
+                    ),
+                ],
+                matrix=RequirementMatrix(
+                    title="角色权限矩阵", columns=["角色", "查看", "编辑"],
+                    rows=[["管理员", "是", "是"], ["用户", "是", "否"]],
+                    source="requirement",
+                ),
+                flow=RequirementFlow(title="登录流程", content="输入凭据→提交→验证→跳转", source="requirement"),
+                pending_confirmations=["是否需要二次验证", "超时时间具体值"],
+            )
+            analysis = AnalysisResult(
+                item_id="11", item_type="story", item_title="解释字段",
+                conclusion="部分完成", evidence=["src/auth.c:1-10"], confidence="中",
+                requirement_interpretation=interp,
+            )
+            doc = generate_document(item, analysis, output_root=td)
+            with open(doc.document_path, encoding="utf-8") as f:
+                content = f.read()
+            self.assertIn("支持手机号登录", content)
+            self.assertIn("支持邮箱登录 *（代码侧候选上下文，不构成需求定义）*", content)
+            self.assertIn("SSO", content)
+            self.assertIn("单点登录", content)
+            self.assertIn("Token", content)
+            self.assertIn("代码侧候选上下文，不构成需求定义", content)
+            self.assertIn("密码强度", content)
+            self.assertIn("至少8位", content)
+            self.assertIn("重试限制", content)
+            self.assertIn("5次后锁定", content)
+            self.assertIn("正常登录", content)
+            self.assertIn("前置条件: 用户在登录页", content)
+            self.assertIn("触发条件: 点击登录", content)
+            self.assertIn("跳转首页", content)
+            self.assertIn("角色权限矩阵", content)
+            self.assertIn("管理员", content)
+            self.assertIn("登录流程", content)
+            self.assertIn("输入凭据→提交→验证→跳转", content)
+            self.assertIn("是否需要二次验证", content)
+            self.assertIn("超时时间具体值", content)
+            self.assertIn("用户可在登录页面输入凭据并认证", content)
+
+    def test_prd_missing_insufficient_sections_show_fallback(self):
+        with tempfile.TemporaryDirectory() as td:
+            item = ZentaoItem(id="12", type="story", title="缺省", description="空需求")
+            interp = RequirementInterpretation(
+                scope=[InterpretationEntry(text="有范围", source="requirement")],
+                terms=[InterpretationTerm(term="T", definition="", source="insufficient")],
+            )
+            analysis = AnalysisResult(
+                item_id="12", item_type="story", item_title="缺省",
+                conclusion="无法判断", evidence=[], confidence="低",
+                requirement_interpretation=interp,
+            )
+            doc = generate_document(item, analysis, output_root=td)
+            with open(doc.document_path, encoding="utf-8") as f:
+                content = f.read()
+            self.assertIn("有范围", content)
+            self.assertIn("原始需求未提供足够信息", content)
+
+    def test_prd_no_interpretation_shows_fallback(self):
+        with tempfile.TemporaryDirectory() as td:
+            item = ZentaoItem(id="13", type="story", title="无解释", description="仅描述")
+            analysis = AnalysisResult(
+                item_id="13", item_type="story", item_title="无解释",
+                conclusion="无法判断", evidence=[], confidence="低",
+            )
+            doc = generate_document(item, analysis, output_root=td)
+            with open(doc.document_path, encoding="utf-8") as f:
+                content = f.read()
+            scope_section = content.split("### 1.2 范围", 1)[1].split("### 1.3", 1)[0]
+            self.assertIn("分析结果未提供有效内容", scope_section)
+            terms_section = content.split("### 1.3 术语定义", 1)[1].split("### 1.4", 1)[0]
+            self.assertIn("分析结果未提供有效内容", terms_section)
+            rules_section = content.split("### 2.1 业务规则", 1)[1].split("### 2.2", 1)[0]
+            self.assertIn("分析结果未提供有效内容", rules_section)
+            pending_section = content.split("### 2.4 待确认事项", 1)[1].split("## 3.", 1)[0]
+            self.assertIn("分析结果未提供有效内容", pending_section)
+
+    def test_prd_invalid_interpretation_field_shows_analysis_degradation(self):
+        with tempfile.TemporaryDirectory() as td:
+            item = ZentaoItem(id="131", type="story", title="畸形分析", description="原始正文")
+            analysis = AnalysisResult(
+                item_id="131", item_type="story", item_title="畸形分析",
+                conclusion="无法判断", evidence=[], confidence="低",
+                requirement_interpretation=RequirementInterpretation(),
+                rich_content_issues=["requirement_interpretation_invalid_scope"],
+            )
+            doc = generate_document(item, analysis, output_root=td)
+            with open(doc.document_path, encoding="utf-8") as f:
+                content = f.read()
+            scope_section = content.split("### 1.2 范围", 1)[1].split("### 1.3", 1)[0]
+            self.assertIn("分析结果未提供有效内容", scope_section)
+
+    def test_prd_code_context_items_show_source_label(self):
+        with tempfile.TemporaryDirectory() as td:
+            item = ZentaoItem(id="14", type="story", title="代码侧", description="需求描述")
+            interp = RequirementInterpretation(
+                scope=[
+                    InterpretationEntry(text="需求侧范围", source="requirement"),
+                    InterpretationEntry(text="代码侧范围", source="code_context"),
+                ],
+                terms=[
+                    InterpretationTerm(term="需求术语", definition="定义A", source="requirement"),
+                    InterpretationTerm(term="代码术语", definition="定义B", source="code_context"),
+                ],
+                rules=[
+                    InterpretationRule(title="需求规则", description="描述A", source="requirement"),
+                    InterpretationRule(title="代码规则", description="描述B", source="code_context"),
+                ],
+            )
+            analysis = AnalysisResult(
+                item_id="14", item_type="story", item_title="代码侧",
+                conclusion="完成", evidence=["src/a.c:1-5 ok"], confidence="高",
+                requirement_interpretation=interp,
+            )
+            doc = generate_document(item, analysis, output_root=td)
+            with open(doc.document_path, encoding="utf-8") as f:
+                content = f.read()
+            self.assertIn("需求侧范围", content)
+            self.assertIn("代码侧范围 *（代码侧候选上下文，不构成需求定义）*", content)
+            self.assertIn("需求术语", content)
+            self.assertIn("代码术语", content)
+            self.assertIn("代码侧候选上下文，不构成需求定义", content)
+            self.assertIn("需求规则", content)
+            self.assertIn("代码规则", content)
+            code_context_count = content.count("代码侧候选上下文，不构成需求定义")
+            self.assertGreaterEqual(code_context_count, 3)
+
+    def test_prd_uses_interpretation_summary_and_labels_raw_description_detail(self):
+        with tempfile.TemporaryDirectory() as td:
+            item = ZentaoItem(id="21", type="requirement", title="长需求", description="原始需求正文内容")
+            analysis = AnalysisResult(
+                item_id="21", item_type="requirement", item_title="长需求",
+                conclusion="无法判断", confidence="低",
+                requirement_interpretation=RequirementInterpretation(summary="提炼后的摘要"),
+            )
+            doc = generate_document(item, analysis, output_root=td)
+            with open(doc.document_path, encoding="utf-8") as f:
+                content = f.read()
+            summary_section = content.split("### 1.1 需求摘要", 1)[1].split("### 1.2", 1)[0]
+            detail_section = content.split("## 2. 需求详细描述", 1)[1].split("### 2.1", 1)[0]
+            self.assertIn("提炼后的摘要", summary_section)
+            self.assertNotIn("原始需求正文内容", summary_section)
+            self.assertIn("原始需求正文：", detail_section)
+            self.assertIn("原始需求正文内容", detail_section)
+            self.assertNotIn("提炼后的摘要", detail_section)
+
+    def test_prd_code_impact_table_shows_validated_locations(self):
+        with tempfile.TemporaryDirectory() as td:
+            item = ZentaoItem(id="15", type="story", title="代码关联", description="需求")
+            impact = CodeImpactAnalysis(
+                related_locations=[
+                    CodeImpactLocation(component="Auth", path="src/auth.c", line_start=10, line_end=20, symbol="login", reason="登录入口"),
+                    CodeImpactLocation(component="", path="src/invalid.c", line_start=0, line_end=0, symbol="", reason="无效位置"),
+                    CodeImpactLocation(component="DB", path="src/db.c", line_start=5, line_end=15, symbol="connect", reason="数据库连接"),
+                ],
+                impact_notes=["注意并发安全", "需要事务处理"],
+            )
+            analysis = AnalysisResult(
+                item_id="15", item_type="story", item_title="代码关联",
+                conclusion="部分完成", evidence=["src/auth.c"], confidence="中",
+                code_impact=impact,
+            )
+            doc = generate_document(item, analysis, output_root=td)
+            with open(doc.document_path, encoding="utf-8") as f:
+                content = f.read()
+            impact_section = content.split("### 3.1 现有代码关联", 1)[1].split("### 3.2", 1)[0]
+            self.assertIn("Auth", impact_section)
+            self.assertIn("src/auth.c", impact_section)
+            self.assertIn("10-20", impact_section)
+            self.assertIn("login", impact_section)
+            self.assertIn("DB", impact_section)
+            self.assertIn("src/db.c", impact_section)
+            self.assertNotIn("src/invalid.c", impact_section)
+            self.assertNotIn("无效位置", impact_section)
+            self.assertIn("注意并发安全", impact_section)
+            self.assertIn("需要事务处理", impact_section)
+
+    def test_prd_code_impact_no_locations_shows_fallback(self):
+        with tempfile.TemporaryDirectory() as td:
+            item = ZentaoItem(id="16", type="story", title="无关联", description="需求")
+            analysis = AnalysisResult(
+                item_id="16", item_type="story", item_title="无关联",
+                conclusion="无法判断", evidence=[], confidence="低",
+            )
+            doc = generate_document(item, analysis, output_root=td)
+            with open(doc.document_path, encoding="utf-8") as f:
+                content = f.read()
+            impact_section = content.split("### 3.1 现有代码关联", 1)[1].split("### 3.2", 1)[0]
+            self.assertIn("分析结果未提供有效内容", impact_section)
+
+    def test_prd_recommendations_marked_advisory(self):
+        with tempfile.TemporaryDirectory() as td:
+            item = ZentaoItem(id="17", type="story", title="建议标记", description="需求")
+            analysis = AnalysisResult(
+                item_id="17", item_type="story", item_title="建议标记",
+                conclusion="未完成", evidence=["src/a.c:1-5 part"],
+                recommendations=["新增模块X", "修改接口Y"],
+                verification=["验证登录流程"],
+                confidence="中",
+            )
+            doc = generate_document(item, analysis, output_root=td)
+            with open(doc.document_path, encoding="utf-8") as f:
+                content = f.read()
+            self.assertIn("以下建议为参考性质，不构成现有实现描述", content)
+            self.assertIn("### 5.1 代码变更建议", content)
+            self.assertIn("新增模块X", content)
+
+    def test_prd_issue_filename_assertions_still_pass(self):
+        with tempfile.TemporaryDirectory() as td:
+            story_item = ZentaoItem(id="20", type="story", title="文件名测试", description="d")
+            story_analysis = AnalysisResult(item_id="20", item_type="story", item_title="文件名测试", conclusion="完成", confidence="高")
+            story_doc = generate_document(story_item, story_analysis, output_root=td)
+            self.assertIn(os.path.join("prd", "PRD-story-20-文件名测试.md"), story_doc.document_path)
+
+            bug_item = ZentaoItem(id="21", type="bug", title="Bug名", description="d")
+            bug_analysis = AnalysisResult(item_id="21", item_type="bug", item_title="Bug名", conclusion="已定位", confidence="高")
+            bug_doc = generate_document(bug_item, bug_analysis, output_root=td)
+            self.assertEqual(bug_doc.document_type, "ISSUE")
+            self.assertIn(os.path.join("issue", "ISSUE-bug-21-Bug名.md"), bug_doc.document_path)
+
+    def test_prd_provided_requirement_source_label(self):
+        with tempfile.TemporaryDirectory() as td:
+            item = ZentaoItem(id="22", type="story", title="用户提交", description="用户需求", requirement_source="provided")
+            analysis = AnalysisResult(
+                item_id="22", item_type="story", item_title="用户提交",
+                conclusion="完成", confidence="高",
+                requirement_source="provided",
+            )
+            doc = generate_document(item, analysis, output_root=td)
+            with open(doc.document_path, encoding="utf-8") as f:
+                content = f.read()
+            self.assertIn("需求来源: 用户提交", content)
 
 
 if __name__ == "__main__":

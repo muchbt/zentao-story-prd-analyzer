@@ -27,6 +27,7 @@ class TestMainPhase3(unittest.TestCase):
             mock_item.assigned_to = "dev"
             mock_item.created_by = "pm"
             mock_item.created_date = "2026-05-20"
+            mock_item.requirement_source = "zentao"
 
             mock_analysis = MagicMock()
             mock_analysis.item_id = "5939"
@@ -50,6 +51,11 @@ class TestMainPhase3(unittest.TestCase):
             mock_analysis.evidence_validation_issues = []
             mock_analysis.requirement_points = []
             mock_analysis.analysis_status = ""
+            mock_analysis.requirement_source = "zentao"
+            mock_analysis.requirement_interpretation = None
+            mock_analysis.code_impact = None
+            mock_analysis.rich_content_issues = []
+            mock_analysis.code_impact_validation_issues = []
 
             with patch.object(main.ZentaoClient, "get_item", return_value=mock_item):
                 with patch("zentao_analyzer.main.analyze", return_value=mock_analysis):
@@ -88,6 +94,7 @@ class TestMainPhase3(unittest.TestCase):
             mock_item.assigned_to = ""
             mock_item.created_by = ""
             mock_item.created_date = ""
+            mock_item.requirement_source = "zentao"
 
             with patch.object(main.ZentaoClient, "get_item", return_value=mock_item):
                 with patch.object(sys, "argv", [

@@ -31,14 +31,65 @@ _FEATURE_RP_EVIDENCE_SCHEMA = '''          {
           }'''
 
 
+_SOURCE_SCHEMA = '"source": "requirement|code_context|insufficient"'
+
+_INTERPRETATION_SCHEMA = '''  "requirement_interpretation": {
+    "summary": "需求摘要，依据 Requirement Source 生成",
+    "scope": [
+      {"text": "范围项描述", "source": "requirement|code_context|insufficient"}
+    ],
+    "terms": [
+      {"term": "术语", "definition": "术语定义", "source": "requirement|code_context|insufficient"}
+    ],
+    "rules": [
+      {"title": "规则标题", "description": "规则描述", "source": "requirement"}
+    ],
+    "scenarios": [
+      {
+        "title": "场景标题",
+        "precondition": "前置条件，可空",
+        "trigger": "触发条件，可空",
+        "expected_behavior": ["预期行为1", "预期行为2"],
+        "source": "requirement|code_context|insufficient"
+      }
+    ],
+    "matrix": {
+      "title": "矩阵标题",
+      "columns": ["列1", "列2"],
+      "rows": [["行1列1", "行1列2"]],
+      "source": "requirement|insufficient"
+    },
+    "flow": {
+      "title": "流程标题",
+      "content": "文本或 Mermaid/ASCII 流程描述",
+      "source": "requirement|insufficient"
+    },
+    "pending_confirmations": ["待确认项1"]
+  },'''
+
+_CODE_IMPACT_SCHEMA = '''  "code_impact": {
+    "related_locations": [
+      {
+        "component": "模块名称",
+        "path": "文件路径",
+        "line_start": 1,
+        "line_end": 20,
+        "symbol": "函数或类名，可为空",
+        "reason": "该位置与需求的关联说明"
+      }
+    ],
+    "impact_notes": ["受需求影响的现有模块说明"]
+  },'''
+
 _FEATURE_TEMPLATE = """你是高级代码分析 Agent。请根据以下禅道条目和目标代码仓库，分析功能实现完成度。
 
-【禅道条目】
+【条目信息】
 ID: {id}
 标题: {title}
 描述: {description}
 类型: {type}
 状态: {status}
+来源: {requirement_source}
 
 【代码仓库】
 路径: {repo_path}
@@ -63,9 +114,9 @@ ID: {id}
 5. JSON 字符串值中不得使用未转义的 ASCII 双引号（"），中文引述请用中文引号""或单引号，或用 \\\" 转义。
 
 【需求点拆分要求】
-6. 将禅道原始需求描述拆分为一个或多个可独立验证的需求点（Requirement Point）。
+6. 将原始需求描述拆分为一个或多个可独立验证的需求点（Requirement Point）。
 7. 每个需求点描述一个可独立验证的预期行为单元，不是代码文件名或测试步骤。
-8. 需求点描述只能依据禅道原始需求，不能从用户搜索建议或代码线索中推导新需求。
+8. 需求点描述只能依据原始需求，不能从用户搜索建议或代码线索中推导新需求。
 9. 为每个需求点独立判断实现状态、给出判定理由、关联代码证据和确认缺口。
 10. 如果代码仓库不足以判断某个需求点，该需求点状态设为"无法判断"，reason 说明证据不足。
 
@@ -78,13 +129,45 @@ ID: {id}
 【证据约束】
 15. evidence 必须引用仓库中实际存在的文件和行号，禁止编造。
 16. 每条 evidence 的 reason 必须说明该证据如何支持此需求点的结论。
+17. code_impact.related_locations 与 requirement_points.evidence 是独立的：related_locations 只说明需求与代码的关联，不作为完成度证据。
+
+【需求解读约束】
+18. requirement_interpretation 的每个字段都应基于 Requirement Source（原始需求正文）整理。
+19. source 枚举值为 requirement（来自需求正文）、code_context（来自代码侧候选上下文）、insufficient（原文信息不足）。
+20. source 为 code_context 的内容仅表明仓库中存在相关命名或模块，不构成需求定义或完成度证据。
+21. source 为 insufficient 时不可编造内容，该字段展示"原始需求未提供足够信息"。
+22. 章节内容不足时，必须以 source: "insufficient" 标明，不能为了填满模板补造事实。
 
 【其他字段】
-17. understanding_summary 只概述你对需求本身的理解，不要重复需求点判定、证据、缺口或建议。
-18. priority 和 verification 分别为整体优先级和验证建议。
+23. understanding_summary 只概述你对需求本身的理解，不要重复需求点判定、证据、缺口或建议。
+24. priority 和 verification 分别为整体优先级和验证建议。
+25. recommendations 为建议性内容，可包含新模块、新接口或测试策略建议，但必须明确标记为建议，不得描述为已有实现。
 
 【JSON Schema】
 {{
+  "requirement_interpretation": {{
+    "summary": "需求摘要",
+    "scope": [{{"text": "范围项", {source_schema}}}],
+    "terms": [{{"term": "术语", "definition": "定义", {source_schema}}}],
+    "rules": [{{"title": "规则标题", "description": "规则描述", {source_schema}}}],
+    "scenarios": [{{"title": "场景标题", "precondition": "前置条件", "trigger": "触发条件", "expected_behavior": ["行为1"], {source_schema}}}],
+    "matrix": {{"title": "矩阵标题", "columns": ["列1"], "rows": [["行1"]], {source_schema}}},
+    "flow": {{"title": "流程标题", "content": "流程描述", {source_schema}}},
+    "pending_confirmations": ["待确认项"]
+  }},
+  "code_impact": {{
+    "related_locations": [
+      {{
+        "component": "模块名称",
+        "path": "文件路径",
+        "line_start": 1,
+        "line_end": 20,
+        "symbol": "函数或类名，可为空",
+        "reason": "该位置与需求的关联说明"
+      }}
+    ],
+    "impact_notes": ["受需求影响的现有模块说明"]
+  }},
   "requirement_points": [
     {{
       "description": "可独立验证的需求点描述",
@@ -170,10 +253,14 @@ def build_feature_prompt(item: ZentaoItem, repo_path: str, seed_snippets=None, s
         description=item.description,
         type=item.type,
         status=item.status,
+        requirement_source=getattr(item, "requirement_source", "zentao") or "zentao",
         repo_path=repo_path,
         seed_context=_format_seed_context(seed_snippets or []),
         search_hints=_format_search_hints(search_hints),
         rp_evidence_schema=_FEATURE_RP_EVIDENCE_SCHEMA,
+        source_schema=_SOURCE_SCHEMA.strip(),
+        interpretation_schema=_INTERPRETATION_SCHEMA.strip(),
+        code_impact_schema=_CODE_IMPACT_SCHEMA.strip(),
     )
 
 

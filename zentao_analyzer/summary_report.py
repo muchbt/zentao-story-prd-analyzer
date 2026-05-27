@@ -42,10 +42,22 @@ def build_summary_item(
         "recommendation_count": len(analysis.recommendations),
         "verification_count": len(analysis.verification),
         "writeback": writeback,
+        "requirement_source": getattr(item, "requirement_source", "zentao") or "zentao",
     }
     rps_raw = getattr(analysis, "requirement_points", None)
     rps = list(rps_raw) if rps_raw else []
     analysis_status = str(getattr(analysis, "analysis_status", "") or "")
+    code_impact = getattr(analysis, "code_impact", None)
+    if code_impact is not None:
+        result["code_impact_location_count"] = len(code_impact.related_locations)
+    rich_issues = getattr(analysis, "rich_content_issues", []) or []
+    if rich_issues:
+        result["rich_content_issues"] = rich_issues
+    interp = getattr(analysis, "requirement_interpretation", None)
+    if interp is not None:
+        interp_pending = getattr(interp, "pending_confirmations", None)
+        if interp_pending:
+            result["has_pending_requirement_confirmation"] = True
     if item.type in ("story", "requirement"):
         if analysis_status == "requirement_points_unavailable":
             result["has_unconfirmed_requirement_points"] = True
