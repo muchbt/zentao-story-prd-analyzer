@@ -37,8 +37,19 @@ def _now_ms() -> int:
 
 
 def _extract_markdown_json(text: str) -> Optional[str]:
-    match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, flags=re.IGNORECASE | re.DOTALL)
-    return match.group(1) if match else None
+    pattern = r"```(?:json)?\s*\n?"
+    start_match = re.search(pattern, text, flags=re.IGNORECASE)
+    if not start_match:
+        return None
+    fence_start = start_match.end()
+    end_pattern = r"```"
+    end_match = re.search(end_pattern, text[fence_start:])
+    if not end_match:
+        code_block = text[fence_start:]
+    else:
+        code_block = text[fence_start:fence_start + end_match.start()]
+    content = code_block.strip()
+    return _extract_first_json_object(content)
 
 
 def _extract_first_json_object(text: str) -> Optional[str]:
@@ -69,6 +80,42 @@ def _extract_first_json_object(text: str) -> Optional[str]:
     return None
 
 
+def _is_quote_structural(text: str, quote_pos: int) -> bool:
+    after = text[quote_pos + 1:].lstrip()
+    if not after:
+        return True
+    return after[0] in (':', ',', '}', ']')
+
+
+def _repair_json_quotes(text: str) -> str:
+    result = []
+    i = 0
+    length = len(text)
+    in_string = False
+    while i < length:
+        ch = text[i]
+        if not in_string:
+            result.append(ch)
+            if ch == '"':
+                in_string = True
+        else:
+            if ch == '\\' and i + 1 < length:
+                result.append(ch)
+                result.append(text[i + 1])
+                i += 2
+                continue
+            elif ch == '"':
+                if _is_quote_structural(text, i):
+                    result.append(ch)
+                    in_string = False
+                else:
+                    result.append('\\"')
+            else:
+                result.append(ch)
+        i += 1
+    return ''.join(result)
+
+
 def extract_json_object(text: str) -> Dict[str, Any]:
     candidates = [text.strip()]
     markdown = _extract_markdown_json(text)
@@ -86,6 +133,19 @@ def extract_json_object(text: str) -> Dict[str, Any]:
             continue
         if isinstance(data, dict):
             return data
+    if last_error and last_error.msg.startswith("Expecting"):
+        repaired_candidates = []
+        for candidate in candidates:
+            repaired = _repair_json_quotes(candidate)
+            if repaired != candidate:
+                repaired_candidates.append(repaired)
+        for candidate in repaired_candidates:
+            try:
+                data = json.loads(candidate)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(data, dict):
+                return data
     if last_error:
         raise last_error
     raise json.JSONDecodeError("No JSON object found", text, 0)
@@ -105,6 +165,7 @@ def classify_agent_error(text: str) -> str:
 CLAUDE_SYSTEM_PROMPT = (
     "你是代码分析 Agent。只返回一个 JSON 对象，不要输出 Markdown。"
     "必须包含 conclusion、evidence、recommendations、verification、confidence 等字段。"
+    "JSON 字符串值中不得使用未转义的 ASCII 双引号，中文引述请用中文引号或单引号。"
 )
 CLAUDE_READ_ONLY_TOOLS = "Read,Grep,Glob"
 

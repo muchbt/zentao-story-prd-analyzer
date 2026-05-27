@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from zentao_analyzer.agent_client import AgentClient, AgentConfig, extract_json_object
+from zentao_analyzer.agent_client import AgentClient, AgentConfig, extract_json_object, _extract_markdown_json, _repair_json_quotes
 
 
 class TestAgentClientCore(unittest.TestCase):
@@ -13,6 +13,43 @@ class TestAgentClientCore(unittest.TestCase):
         self.assertEqual(extract_json_object('{"conclusion":"完成"}'), {"conclusion": "完成"})
         self.assertEqual(extract_json_object('```json\n{"conclusion":"完成"}\n```'), {"conclusion": "完成"})
         self.assertEqual(extract_json_object('prefix {"conclusion":"完成"} suffix'), {"conclusion": "完成"})
+
+    def test_extract_markdown_json_nested_braces(self):
+        text = '```json\n{"key": {"nested": true}, "list": [1, 2]}\n```'
+        result = extract_json_object(text)
+        self.assertEqual(result, {"key": {"nested": True}, "list": [1, 2]})
+
+    def test_extract_markdown_json_with_prefix_text(self):
+        text = 'Based on my analysis:\n\n```json\n{"conclusion":"完成","evidence":[]}\n```'
+        result = extract_json_object(text)
+        self.assertEqual(result["conclusion"], "完成")
+
+    def test_extract_markdown_json_incomplete_code_fence(self):
+        text = '```json\n{"key": "value"}\n'
+        result = extract_json_object(text)
+        self.assertEqual(result, {"key": "value"})
+
+    def test_repair_json_quotes_in_string_values(self):
+        broken = '{"reason": "覆盖了"对地短路"故障场景"}'
+        result = extract_json_object(broken)
+        self.assertEqual(result["reason"], '覆盖了"对地短路"故障场景')
+
+    def test_repair_json_quotes_multiple_embedded(self):
+        broken = '{"a": "他说"你好"然后离开", "b": "正常值"}'
+        result = extract_json_object(broken)
+        self.assertIn("你好", result["a"])
+        self.assertEqual(result["b"], "正常值")
+
+    def test_repair_json_quotes_in_markdown_response(self):
+        broken = 'Based on analysis:\n\n```json\n{"requirement_points": [{"description": "TCAM 应记录"备份电池"的 DTC", "status": "完成"}]}\n```'
+        result = extract_json_object(broken)
+        self.assertEqual(len(result["requirement_points"]), 1)
+        self.assertIn("备份电池", result["requirement_points"][0]["description"])
+
+    def test_valid_json_not_modified_by_repair(self):
+        valid = '{"key": "value without issues", "num": 42}'
+        result = extract_json_object(valid)
+        self.assertEqual(result, {"key": "value without issues", "num": 42})
 
     def test_openai_agent_is_not_supported(self):
         result = AgentClient(AgentConfig(agent="openai")).call("prompt")

@@ -2,6 +2,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch, MagicMock
 
@@ -16,6 +17,11 @@ from zentao_analyzer.zentao_client import (
     ZentaoFormatError,
     ZentaoCommandError,
 )
+import contextlib
+import io
+import sys
+
+import zentao_analyzer.main as main_mod
 
 
 class TestZentaoItem(unittest.TestCase):
@@ -42,6 +48,28 @@ class TestZentaoItem(unittest.TestCase):
     def test_from_dict_invalid(self):
         with self.assertRaises(ZentaoFormatError):
             ZentaoItem.from_dict("not a dict")
+
+    def test_from_dict_empty_all_key_fields_raises(self):
+        with self.assertRaises(ZentaoFormatError) as ctx:
+            ZentaoItem.from_dict({"id": "", "title": "", "status": "success"}, item_type="story")
+        self.assertIn("关键字段为空", str(ctx.exception))
+        self.assertIn("story", str(ctx.exception))
+
+    def test_from_dict_empty_with_id_is_ok(self):
+        item = ZentaoItem.from_dict({"id": 5898, "title": "", "desc": ""}, item_type="requirement")
+        self.assertEqual(item.id, "5898")
+
+    def test_from_dict_empty_with_title_is_ok(self):
+        item = ZentaoItem.from_dict({"id": "", "title": "需求标题", "desc": ""}, item_type="story")
+        self.assertEqual(item.title, "需求标题")
+
+    def test_from_dict_empty_with_description_is_ok(self):
+        item = ZentaoItem.from_dict({"id": "", "title": "", "desc": "详细描述"}, item_type="requirement")
+        self.assertEqual(item.description, "详细描述")
+
+    def test_from_dict_all_keys_missing_raises(self):
+        with self.assertRaises(ZentaoFormatError):
+            ZentaoItem.from_dict({"status": "active", "pri": 1}, item_type="story")
 
 
 class TestZentaoClient(unittest.TestCase):
@@ -173,6 +201,29 @@ class TestZentaoClient(unittest.TestCase):
             client = ZentaoClient()
             result = client._run(["profile", "admin@z.com"])
         self.assertTrue(result.get("success"))
+
+
+class TestEmptyItemInMain(unittest.TestCase):
+    def test_get_item_empty_key_fields_raises_format_error(self):
+        data = {"status": "success"}
+        with self.assertRaises(ZentaoFormatError):
+            ZentaoItem.from_dict(data, item_type="story")
+
+    def test_main_catches_format_error_for_empty_item(self):
+        with tempfile.TemporaryDirectory() as td:
+            argv = [
+                "zentao_analyzer.main.py", "--module", "story", "--id", "5898",
+                "--analyze", "--repo-path", td, "--output-root", td, "--quiet",
+            ]
+            with patch.object(main_mod.ZentaoClient, "get_item", side_effect=ZentaoFormatError(
+                "获取到的禅道条目所有关键字段为空（id、标题、描述均为空），"
+                "请确认模块类型和条目 ID 是否匹配（请求模块: story，返回数据字段: ['status']）"
+            )):
+                with patch.object(sys, "argv", argv):
+                    stdout = io.StringIO()
+                    with contextlib.redirect_stdout(stdout):
+                        code = main_mod.main()
+            self.assertEqual(code, 3)
 
 
 if __name__ == "__main__":

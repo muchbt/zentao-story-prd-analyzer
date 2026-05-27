@@ -15,7 +15,7 @@ from .document_generator import generate_document, validate_document_consistency
 from .run_logger import RunLogger, redact_sensitive
 from .summary_report import build_summary_item, write_summary_report
 from .writeback import prepare_writeback_status
-from .zentao_client import ZentaoClient, ZentaoError
+from .zentao_client import ZentaoClient, ZentaoError, ZentaoFormatError
 
 
 def _plain_locations(locations):
@@ -156,7 +156,28 @@ def main():
                 status=args.status,
                 limit=args.limit,
             )
+            for i, item in enumerate(items):
+                if not item.id and not item.title and not item.description:
+                    logger.error(
+                        "fetch_items",
+                        "empty_item",
+                        status="failed",
+                        module=args.module,
+                        index=i,
+                        error="条目所有关键字段为空",
+                    )
+                    print(
+                        f"[错误] 列表第 {i + 1} 个条目所有关键字段为空"
+                        f"（id、标题、描述均为空），请确认模块类型和查询条件是否正确"
+                        f"（模块: {args.module}）",
+                        file=sys.stderr,
+                    )
+                    return 3
         logger.info("fetch_items", "done", status="done", count=len(items))
+    except ZentaoFormatError as e:
+        logger.error("fetch_items", "failed", status="failed", error=str(e))
+        print(f"[错误] 获取禅道数据失败: {e}", file=sys.stderr)
+        return 3
     except ZentaoError as e:
         logger.error("fetch_items", "failed", status="failed", error=str(e))
         err_msg = str(e)

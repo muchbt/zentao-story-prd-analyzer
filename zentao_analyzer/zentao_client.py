@@ -71,8 +71,16 @@ class ZentaoItem:
 
         title = _get("title", "name", default="")
         desc = _get("desc", "description", "spec", "steps", "content", default="")
+        item_id = _get("id", "ID", default="")
+        if not item_id and not title and not desc:
+            available_keys = list(data.keys()) if isinstance(data, dict) else []
+            raise ZentaoFormatError(
+                f"获取到的禅道条目所有关键字段为空（id、标题、描述均为空），"
+                f"请确认模块类型和条目 ID 是否匹配"
+                f"（请求模块: {item_type or '未知'}，返回数据字段: {available_keys}）"
+            )
         return cls(
-            id=_get("id", "ID", default=""),
+            id=item_id,
             type=item_type or _get("type", "module", default=""),
             title=title,
             description=desc,

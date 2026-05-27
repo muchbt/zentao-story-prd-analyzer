@@ -51,6 +51,7 @@ Never print tokens, passwords, API keys, Authorization headers, or full login co
 - Add `--quiet` when stdout should remain machine-readable JSON.
 - Add `--output-root <TARGET_REPO>/docs` if the working directory is not the Target Repository.
 - Do not use `--module issue`; ISSUE is an output document type. Use real Zentao modules such as `story`, `requirement`, `bug`, `task`, `ticket`, or `feedback`.
+- When the user says "需求" or "requirement", use `--module requirement`. When the user says "缺陷", "Bug" or "bug", use `--module bug`. When the user says "Story" or "故事", use `--module story`. Do not map "需求" to the `story` module.
 - Do not use removed options `--keywords`, `--symbols`, `--incremental`, or `--last-commit`.
 - If providing clues, use `--clues` for Search Hints and `--paths` only for repository files.
 
