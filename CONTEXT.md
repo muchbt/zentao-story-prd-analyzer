@@ -41,11 +41,11 @@ Feature Item 中可独立验证的一条期望行为单元。
 _Avoid_: 整条需求、Code Evidence、测试步骤
 
 **Code Impact Analysis**:
-对与 Feature Item 相关的现有代码区域及其可能影响的分析。
+对与 Feature Item 相关的现有代码区域及其可能影响的分析。在 PRD 中与 Completion Assessment 的证据位置合并展示为统一代码位置总览，但关联位置本身不自动支撑完成度结论。
 _Avoid_: Completion Assessment、Requirement Source
 
 **Completion Assessment**:
-基于 Requirement Points 与有效 Code Evidence 得出的实现完成度、缺口和可信度结论。
+基于 Requirement Points 与有效 Code Evidence 得出的实现完成度、缺口和可信度结论。可信度按有确认证据的需求点比例分级：全部完成为高，至少有一个确认为中，无确认为低。
 _Avoid_: Requirement Interpretation、搜索命中
 
 **Implementation Recommendation**:
@@ -85,7 +85,7 @@ _Avoid_: 搜索命中、Seed Path
 ### 输出与执行边界
 
 **PRD Document**:
-解释 Feature Item 需求，并包含完成度评估、代码影响、缺口和建议的可复核 Markdown 文档。
+解释 Feature Item 需求，并以统一代码位置总览合并代码影响与完成度证据，包含需求解读、代码依据、完成度评估、缺口和建议的可复核 Markdown 文档。
 _Avoid_: Feature Item、需求原文
 
 **ISSUE Document**:

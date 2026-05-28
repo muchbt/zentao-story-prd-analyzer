@@ -367,7 +367,7 @@ class TestDocumentGeneratorWithRPs(unittest.TestCase):
             doc = generate_document(item, analysis, output_root=td, generated_at="2026-05-26T10:00:00+08:00")
             with open(doc.document_path, encoding="utf-8") as f:
                 content = f.read()
-            self.assertIn("## 4. 需求对照表", content)
+            self.assertIn("## 4. 完成度评估", content)
             self.assertIn("RP-001", content)
             self.assertIn("MCU 上报指定状态", content)
             self.assertIn("RP-002", content)
@@ -383,7 +383,7 @@ class TestDocumentGeneratorWithRPs(unittest.TestCase):
             doc = generate_document(item, analysis, output_root=td)
             with open(doc.document_path, encoding="utf-8") as f:
                 content = f.read()
-            self.assertIn("## 4. 需求对照表", content)
+            self.assertIn("## 4. 完成度评估", content)
             self.assertIn("未提取结构化需求点", content)
 
     def test_prd_gaps_with_rp_prefix(self):

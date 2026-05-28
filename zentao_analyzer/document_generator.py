@@ -212,23 +212,101 @@ def _render_pending_confirmations(analysis: AnalysisResult) -> str:
     return "\n".join(f"- {item}" for item in interp.pending_confirmations)
 
 
-def _render_code_impact_table(analysis: AnalysisResult) -> str:
+def _render_code_impact_notes(analysis: AnalysisResult) -> str:
     impact = analysis.code_impact
-    if impact is None or not impact.related_locations:
+    if impact is None or not impact.impact_notes:
         return _NO_CONTENT_MSG
-    validated = [loc for loc in impact.related_locations
-                 if loc.path and loc.line_start > 0 and loc.line_end > 0]
-    if not validated:
+    return "\n".join(f"- {n}" for n in impact.impact_notes)
+
+
+def _render_unified_code_table(analysis: AnalysisResult) -> str:
+    impact = analysis.code_impact
+    impact_locs = impact.related_locations if impact else []
+    rps = getattr(analysis, "requirement_points", []) or []
+
+    impact_map: dict = {}
+    for loc in impact_locs:
+        if loc.path and loc.line_start > 0 and loc.line_end > 0:
+            key = (loc.path, loc.line_start, loc.line_end)
+            impact_map[key] = (loc.component or "", loc.symbol or "", loc.reason or "")
+
+    evidence_map: dict = {}
+    for rp in rps:
+        for ev in rp.evidence:
+            if ev.path and ev.line_start > 0 and ev.line_end > 0:
+                key = (ev.path, ev.line_start, ev.line_end)
+                if key not in evidence_map:
+                    evidence_map[key] = {}
+                evidence_map[key][rp.id] = (ev.symbol or "", ev.reason or "")
+
+    cited_locs = getattr(analysis, "cited_evidence_locations", []) or []
+    cited_fallback: dict = {}
+    for loc in cited_locs:
+        if loc.path and loc.line_start > 0 and loc.line_end > 0:
+            key = (loc.path, loc.line_start, loc.line_end)
+            if key not in evidence_map:
+                evidence_map[key] = {}
+            cited_fallback[key] = (loc.symbol or "", loc.reason or "")
+
+    all_keys = set()
+    all_keys.update(impact_map.keys())
+    all_keys.update(evidence_map.keys())
+
+    if not all_keys:
         return _NO_CONTENT_MSG
-    rows = ["| 组件 | 文件 | 行号 | 符号 | 说明 |", "|---|---|---:|---|---|"]
-    for loc in validated:
-        line_range = f"{loc.line_start}-{loc.line_end}"
-        rows.append(f"| {loc.component or ''} | {loc.path} | {line_range} | {loc.symbol or ''} | {loc.reason or ''} |")
-    result = "\n".join(rows)
-    if impact.impact_notes:
-        notes = "\n".join(f"- {n}" for n in impact.impact_notes)
-        result += f"\n\n补充说明：\n\n{notes}"
-    return result
+
+    rows = ["| 关联模块 | 文件 | 行号 | 符号 | 影响说明 | 证据说明 |",
+            "|---|---|---|---|---|---|"]
+
+    MAX_EVID_PREVIEW = 50
+
+    def _shorten(text: str, limit: int) -> str:
+        if len(text) <= limit:
+            return text
+        return text[:limit] + "…"
+
+    for key in sorted(all_keys):
+        path, line_start, line_end = key
+        component, impact_symbol, impact_reason = impact_map.get(key, ("", "", ""))
+        rp_entries = evidence_map.get(key, {})
+        all_rp_ids = sorted(rp_entries.keys())
+
+        symbol = impact_symbol
+        if not symbol and rp_entries:
+            for sid, sreason in rp_entries.values():
+                if sid:
+                    symbol = sid
+                    break
+        if not symbol and key in cited_fallback:
+            symbol = cited_fallback[key][0]
+
+        impact_text = impact_reason or "—"
+
+        if all_rp_ids:
+            preview = ""
+            for pid, (esym, ereason) in rp_entries.items():
+                if ereason:
+                    first_sent = ereason.split("。")[0].split(": ")[-1]
+                    parts = [p.strip() for p in first_sent.split("，") if p.strip()]
+                    preview = parts[0] if parts else first_sent
+                    break
+            ref_ids = "、".join(f"见 {pid}" for pid in all_rp_ids)
+            if preview:
+                evidence_text = f"{_shorten(preview, MAX_EVID_PREVIEW)}（{ref_ids}）"
+            else:
+                evidence_text = ref_ids
+        elif key in cited_fallback:
+            fallback_reason = cited_fallback[key][1]
+            evidence_text = _shorten(fallback_reason, MAX_EVID_PREVIEW) or "—"
+        else:
+            evidence_text = "—"
+
+        line_range = f"{line_start}-{line_end}"
+        rows.append(
+            f"| {component} | {path} | {line_range} | {symbol} | {impact_text} | {evidence_text} |"
+        )
+
+    return "\n".join(rows)
 
 
 def _render_interpretation_summary(analysis: AnalysisResult, item_description: str = "") -> str:
@@ -296,29 +374,26 @@ def _render_key_evidence_table(analysis: AnalysisResult) -> str:
     return "\n".join(rows)
 
 
-def _render_prd_evidence(analysis: AnalysisResult) -> str:
+def _render_supplemental_evidence(analysis: AnalysisResult) -> str:
     locations = getattr(analysis, "cited_evidence_locations", []) or []
     evidence = getattr(analysis, "evidence", []) or []
-    represented_evidence = {
+    if not evidence:
+        return ""
+    represented = {
         " ".join(
             part for part in (
-                f"{location.path}:{location.line_start}-{location.line_end}",
-                location.symbol or "",
-                location.reason or "",
+                f"{loc.path}:{loc.line_start}-{loc.line_end}",
+                loc.symbol or "",
+                loc.reason or "",
             ) if part
         )
-        for location in locations
+        for loc in locations
     }
-
-    supplemental = [item for item in evidence if item not in represented_evidence]
-    if locations or evidence:
-        sections = [_render_key_evidence_table(analysis)]
-    else:
-        sections = ["无可定位代码证据；当前无法验证实现状态。"]
-    if supplemental:
-        notes = "\n".join(f"- {item}" for item in supplemental)
-        sections.append(f"补充说明：\n\n{notes}")
-    return "\n\n".join(sections)
+    supplemental = [item for item in evidence if item not in represented]
+    if not supplemental:
+        return ""
+    notes = "\n".join(f"- {item}" for item in supplemental)
+    return f"补充说明：\n\n{notes}"
 
 
 def validate_document_consistency(analysis: AnalysisResult, document: DocumentResult):
@@ -336,7 +411,7 @@ def validate_document_consistency(analysis: AnalysisResult, document: DocumentRe
         issues.append("unexpected_diagnostic_banner")
     locations = getattr(analysis, "cited_evidence_locations", []) or []
     if locations:
-        evidence_heading = "### 3.3 关键代码证据" if document.document_type == "PRD" else "## 关键代码证据"
+        evidence_heading = "### 3.1 代码位置总览" if document.document_type == "PRD" else "## 关键代码证据"
         if evidence_heading not in content:
             issues.append("missing_key_evidence_section")
         if not any(location.path and location.path in content for location in locations):
@@ -376,6 +451,19 @@ def _prd_track_section(document_path: str, writeback_status: str) -> str:
 """
 
 
+def _render_completion_ratio(analysis: AnalysisResult) -> str:
+    rps = getattr(analysis, "requirement_points", []) or []
+    if not rps:
+        return ""
+    total = len(rps)
+    counts: dict = {}
+    for rp in rps:
+        counts[rp.status] = counts.get(rp.status, 0) + 1
+    labels = {"完成": "完成", "部分完成": "部分完成", "未完成": "未完成", "无法判断": "无法判断"}
+    parts = [f"{counts[s]} {labels[s]}" for s in labels if counts.get(s, 0) > 0]
+    return f"- **需求点统计**：{'、'.join(parts)}（共 {total}）"
+
+
 def _render_prd(item: ZentaoItem, analysis: AnalysisResult, generated_at: str, document_path: str, writeback_status: str) -> str:
     gaps = _render_prd_gaps(analysis)
     recommendations = "\n".join(f"- {r}" for r in analysis.recommendations) if analysis.recommendations else "无"
@@ -395,7 +483,10 @@ def _render_prd(item: ZentaoItem, analysis: AnalysisResult, generated_at: str, d
     matrix = _render_matrix(analysis)
     pending = _render_pending_confirmations(analysis)
     source_info = _prd_source_info(item, generated_at, analysis.requirement_source)
-    code_impact = _render_code_impact_table(analysis)
+    unified_table = _render_unified_code_table(analysis)
+    impact_notes = _render_code_impact_notes(analysis)
+    supplemental = _render_supplemental_evidence(analysis)
+    ratio_line = _render_completion_ratio(analysis)
 
     return f"""# PRD: {item.title}
 
@@ -415,7 +506,7 @@ def _render_prd(item: ZentaoItem, analysis: AnalysisResult, generated_at: str, d
 
 {source_info}
 
-## 2. 需求详细描述
+## 2. 需求解读
 
 原始需求正文：
 
@@ -437,23 +528,26 @@ def _render_prd(item: ZentaoItem, analysis: AnalysisResult, generated_at: str, d
 
 {pending}
 
-## 3. 功能影响分析
+## 3. 代码依据
 
-### 3.1 现有代码关联
+### 3.1 代码位置总览
 
-{code_impact}
+{unified_table}
 
-### 3.2 实现完成度
+{supplemental}
+
+### 3.2 影响说明
+
+{impact_notes}
+
+### 3.3 实现完成度
 
 - **结论**：{analysis.conclusion or "未判断"}
 - **优先级**：{analysis.priority or "未评估"}
 - **可信度**：{analysis.confidence or "未评估"}
+{ratio_line}
 
-### 3.3 关键代码证据
-
-{_render_prd_evidence(analysis)}
-
-## 4. 需求对照表
+## 4. 完成度评估
 
 ### 4.1 需求点完成情况
 
@@ -463,7 +557,7 @@ def _render_prd(item: ZentaoItem, analysis: AnalysisResult, generated_at: str, d
 
 {gaps}
 
-## 5. 建议实现策略
+## 5. 实现建议
 
 > 以下建议为参考性质，不构成现有实现描述。
 

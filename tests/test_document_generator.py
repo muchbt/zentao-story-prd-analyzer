@@ -55,20 +55,20 @@ class TestDocumentGenerator(unittest.TestCase):
             self.assertIn("### 1.4 来源信息", content)
             self.assertIn("条目类型: story", content)
             self.assertIn("需求来源: 禅道", content)
-            self.assertIn("## 2. 需求详细描述", content)
+            self.assertIn("## 2. 需求解读", content)
             self.assertIn("### 2.1 业务规则", content)
             self.assertIn("### 2.2 场景与流程", content)
             self.assertIn("### 2.3 关系或并发矩阵", content)
             self.assertIn("### 2.4 待确认事项", content)
             self.assertIn("部分完成", content)
-            self.assertIn("## 3. 功能影响分析", content)
-            self.assertIn("### 3.1 现有代码关联", content)
-            self.assertIn("### 3.2 实现完成度", content)
-            self.assertIn("### 3.3 关键代码证据", content)
-            self.assertIn("无可定位代码证据", content)
+            self.assertIn("## 3. 代码依据", content)
+            self.assertIn("### 3.1 代码位置总览", content)
+            self.assertIn("### 3.2 影响说明", content)
+            self.assertIn("### 3.3 实现完成度", content)
             self.assertIn("- src/auth.py: login exists", content)
-            self.assertIn("## 4. 需求对照表", content)
-            self.assertIn("## 5. 建议实现策略", content)
+            self.assertIn("## 4. 完成度评估", content)
+            self.assertIn("### 4.1 需求点完成情况", content)
+            self.assertIn("## 5. 实现建议", content)
             self.assertIn("以下建议为参考性质", content)
             self.assertIn("### 5.1 代码变更建议", content)
             self.assertIn("### 5.2 测试要点", content)
@@ -124,8 +124,9 @@ class TestDocumentGenerator(unittest.TestCase):
             doc = generate_document(item, analysis, output_root=td)
             with open(doc.document_path, encoding="utf-8") as f:
                 content = f.read()
-            self.assertIn("| src/a.c | 12-40 | Login | 支持结论 |", content)
-            self.assertIn("| src/b.c | 2-3 | Logout | 支持退出 |", content)
+            self.assertIn("| 关联模块 | 文件 | 行号 | 符号 | 影响说明 | 证据说明 |", content)
+            self.assertIn("| src/a.c | 12-40 | Login | — | 支持结论 |", content)
+            self.assertIn("| src/b.c | 2-3 | Logout | — | 支持退出 |", content)
             self.assertNotIn("补充说明：", content)
             self.assertNotIn("## 实现证据", content)
             self.assertNotIn("## 已实现的核心功能", content)
@@ -190,7 +191,7 @@ class TestDocumentGenerator(unittest.TestCase):
             self.assertIn("# PRD: T", content)
             self.assertIn("> 诊断文档：当前条目未能生成完整 PRD。", content)
             self.assertIn("LLM 调用失败", content)
-            self.assertIn("无可定位代码证据；当前无法验证实现状态。", content)
+            self.assertIn("分析结果未提供有效内容", content)
             self.assertIn("无法确定是否存在缺口", content)
             self.assertIn("## 6. 参考信息", content)
             self.assertIn("### 6.1 追踪信息", content)
@@ -248,12 +249,12 @@ class TestDocumentGenerator(unittest.TestCase):
             for heading in [
                 "## 1. 概述", "### 1.1 需求摘要", "### 1.2 范围",
                 "### 1.3 术语定义", "### 1.4 来源信息",
-                "## 2. 需求详细描述", "### 2.1 业务规则", "### 2.2 场景与流程",
+                "## 2. 需求解读", "### 2.1 业务规则", "### 2.2 场景与流程",
                 "### 2.3 关系或并发矩阵", "### 2.4 待确认事项",
-                "## 3. 功能影响分析", "### 3.1 现有代码关联",
-                "### 3.2 实现完成度", "### 3.3 关键代码证据",
-                "## 4. 需求对照表", "### 4.1 需求点完成情况", "### 4.2 差异与缺口",
-                "## 5. 建议实现策略", "### 5.1 代码变更建议", "### 5.2 测试要点",
+                "## 3. 代码依据", "### 3.1 代码位置总览",
+                "### 3.2 影响说明", "### 3.3 实现完成度",
+                "## 4. 完成度评估", "### 4.1 需求点完成情况", "### 4.2 差异与缺口",
+                "## 5. 实现建议", "### 5.1 代码变更建议", "### 5.2 测试要点",
                 "## 6. 参考信息", "### 6.1 追踪信息",
             ]:
                 self.assertIn(heading, content, f"Missing heading: {heading}")
@@ -418,7 +419,7 @@ class TestDocumentGenerator(unittest.TestCase):
             with open(doc.document_path, encoding="utf-8") as f:
                 content = f.read()
             summary_section = content.split("### 1.1 需求摘要", 1)[1].split("### 1.2", 1)[0]
-            detail_section = content.split("## 2. 需求详细描述", 1)[1].split("### 2.1", 1)[0]
+            detail_section = content.split("## 2. 需求解读", 1)[1].split("### 2.1", 1)[0]
             self.assertIn("提炼后的摘要", summary_section)
             self.assertNotIn("原始需求正文内容", summary_section)
             self.assertIn("原始需求正文：", detail_section)
@@ -444,17 +445,16 @@ class TestDocumentGenerator(unittest.TestCase):
             doc = generate_document(item, analysis, output_root=td)
             with open(doc.document_path, encoding="utf-8") as f:
                 content = f.read()
-            impact_section = content.split("### 3.1 现有代码关联", 1)[1].split("### 3.2", 1)[0]
-            self.assertIn("Auth", impact_section)
-            self.assertIn("src/auth.c", impact_section)
-            self.assertIn("10-20", impact_section)
-            self.assertIn("login", impact_section)
-            self.assertIn("DB", impact_section)
-            self.assertIn("src/db.c", impact_section)
-            self.assertNotIn("src/invalid.c", impact_section)
-            self.assertNotIn("无效位置", impact_section)
-            self.assertIn("注意并发安全", impact_section)
-            self.assertIn("需要事务处理", impact_section)
+            table_section = content.split("### 3.1 代码位置总览", 1)[1].split("### 3.2", 1)[0]
+            notes_section = content.split("### 3.2 影响说明", 1)[1].split("### 3.3", 1)[0]
+            self.assertIn("Auth", table_section)
+            self.assertIn("src/auth.c | 10-20 | login | 登录入口", table_section)
+            self.assertIn("DB", table_section)
+            self.assertIn("src/db.c", table_section)
+            self.assertNotIn("src/invalid.c", table_section)
+            self.assertNotIn("无效位置", table_section)
+            self.assertIn("注意并发安全", notes_section)
+            self.assertIn("需要事务处理", notes_section)
 
     def test_prd_code_impact_no_locations_shows_fallback(self):
         with tempfile.TemporaryDirectory() as td:
@@ -466,8 +466,8 @@ class TestDocumentGenerator(unittest.TestCase):
             doc = generate_document(item, analysis, output_root=td)
             with open(doc.document_path, encoding="utf-8") as f:
                 content = f.read()
-            impact_section = content.split("### 3.1 现有代码关联", 1)[1].split("### 3.2", 1)[0]
-            self.assertIn("分析结果未提供有效内容", impact_section)
+            table_section = content.split("### 3.1 代码位置总览", 1)[1].split("### 3.2", 1)[0]
+            self.assertIn("分析结果未提供有效内容", table_section)
 
     def test_prd_recommendations_marked_advisory(self):
         with tempfile.TemporaryDirectory() as td:
@@ -511,6 +511,72 @@ class TestDocumentGenerator(unittest.TestCase):
             with open(doc.document_path, encoding="utf-8") as f:
                 content = f.read()
             self.assertIn("需求来源: 用户提交", content)
+
+    def test_prd_shows_completion_ratio(self):
+        with tempfile.TemporaryDirectory() as td:
+            item = ZentaoItem(id="23", type="story", title="比例测试")
+            analysis = AnalysisResult(
+                item_id="23", item_type="story", item_title="比例测试",
+                conclusion="部分完成", confidence="中",
+                requirement_points=[
+                    RequirementPoint(id="RP-001", description="A", status="完成"),
+                    RequirementPoint(id="RP-002", description="B", status="无法判断"),
+                    RequirementPoint(id="RP-003", description="C", status="完成"),
+                ],
+            )
+            doc = generate_document(item, analysis, output_root=td)
+            with open(doc.document_path) as f:
+                content = f.read()
+            section = content.split("### 3.3 实现完成度", 1)[1].split("## 4.", 1)[0]
+            self.assertIn("需求点统计", section)
+            self.assertIn("2 完成", section)
+            self.assertIn("1 无法判断", section)
+            self.assertIn("共 3", section)
+
+    def test_evidence_deduplication_against_code_impact(self):
+        with tempfile.TemporaryDirectory() as td:
+            item = ZentaoItem(id="24", type="story", title="去重测试")
+            impact = CodeImpactAnalysis(
+                related_locations=[
+                    CodeImpactLocation(component="A", path="src/a.c", line_start=10, line_end=20, symbol="f1", reason="关联1"),
+                ]
+            )
+            analysis = AnalysisResult(
+                item_id="24", item_type="story", item_title="去重测试",
+                conclusion="部分完成", confidence="中",
+                code_impact=impact,
+                cited_evidence_locations=[
+                    EvidenceLocation(path="src/a.c", line_start=10, line_end=20, symbol="f1", reason="关联1"),
+                    EvidenceLocation(path="src/b.c", line_start=5, line_end=10, symbol="f2", reason="独有"),
+                ],
+                evidence=["src/a.c:10-20 f1 关联1", "src/b.c:5-10 f2 独有"],
+            )
+            doc = generate_document(item, analysis, output_root=td)
+            with open(doc.document_path) as f:
+                content = f.read()
+            table_section = content.split("### 3.1 代码位置总览", 1)[1].split("### 3.2", 1)[0]
+            self.assertIn("src/a.c", table_section)
+            self.assertIn("src/b.c", table_section)
+            self.assertEqual(table_section.count("src/a.c"), 1)
+            self.assertEqual(table_section.count("src/b.c"), 1)
+
+    def test_prd_low_confidence_with_evidence_no_diagnostic_banner(self):
+        with tempfile.TemporaryDirectory() as td:
+            item = ZentaoItem(id="25", type="story", title="T")
+            analysis = AnalysisResult(
+                item_id="25", item_type="story", item_title="T",
+                conclusion="部分完成", confidence="低",
+                evidence=["src/a.c:1-5 已实现"],
+                requirement_points=[
+                    RequirementPoint(id="RP-001", description="A", status="完成"),
+                    RequirementPoint(id="RP-002", description="B", status="无法判断"),
+                ],
+            )
+            doc = generate_document(item, analysis, output_root=td)
+            self.assertFalse(doc.is_diagnostic)
+            with open(doc.document_path) as f:
+                content = f.read()
+            self.assertNotIn("诊断文档：当前条目未能生成完整", content)
 
 
 if __name__ == "__main__":

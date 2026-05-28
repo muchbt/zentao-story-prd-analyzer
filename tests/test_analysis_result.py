@@ -5,7 +5,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from zentao_analyzer.analysis_result import AnalysisResult, parse_requirement_interpretation, parse_code_impact, CodeImpactLocation
+from zentao_analyzer.analysis_result import AnalysisResult, parse_requirement_interpretation, parse_code_impact, CodeImpactLocation, compute_item_confidence, RequirementPoint, RPStatus
 from zentao_analyzer.zentao_client import ZentaoItem
 
 class TestAnalysisResult(unittest.TestCase):
@@ -239,6 +239,71 @@ class TestAnalysisResultRichContent(unittest.TestCase):
         self.assertIsNone(result.requirement_interpretation)
         self.assertIsNone(result.code_impact)
         self.assertEqual(result.rich_content_issues, [])
+
+
+class TestIsInsufficientEvidence(unittest.TestCase):
+    def test_has_evidence_not_insufficient_despite_low_confidence(self):
+        result = AnalysisResult(
+            item_id="1", item_type="story", item_title="T",
+            conclusion="部分完成", confidence="低",
+            evidence=["src/a.c:1-5 实现了核心功能"],
+            requirement_points=[
+                RequirementPoint(id="RP-001", description="功能A", status="完成"),
+                RequirementPoint(id="RP-002", description="功能B", status="无法判断"),
+            ],
+        )
+        self.assertFalse(result.is_insufficient_evidence())
+
+    def test_no_evidence_returns_insufficient(self):
+        result = AnalysisResult(
+            item_id="2", item_type="story", item_title="T",
+            conclusion="无法判断", confidence="中", evidence=[],
+        )
+        self.assertTrue(result.is_insufficient_evidence())
+
+    def test_error_returns_insufficient(self):
+        result = AnalysisResult.from_error(
+            ZentaoItem(id="3", type="story", title="T"), "LLM timeout",
+        )
+        self.assertTrue(result.is_insufficient_evidence())
+
+
+class TestComputeConfidence(unittest.TestCase):
+    def setUp(self):
+        self.rp_completed = RequirementPoint(id="RP-001", description="A", status="完成")
+        self.rp_indeterminate = RequirementPoint(id="RP-002", description="B", status="无法判断")
+        self.rp_partial = RequirementPoint(id="RP-003", description="C", status="部分完成")
+
+    def test_all_completed_returns_high(self):
+        rps = [self.rp_completed, self.rp_completed]
+        self.assertEqual(compute_item_confidence(rps), "高")
+
+    def test_mix_completed_and_indeterminate_returns_medium(self):
+        rps = [self.rp_completed, self.rp_indeterminate]
+        self.assertEqual(compute_item_confidence(rps), "中")
+
+    def test_mix_completed_partial_indeterminate_returns_medium(self):
+        rps = [self.rp_completed, self.rp_partial, self.rp_indeterminate]
+        self.assertEqual(compute_item_confidence(rps), "中")
+
+    def test_mostly_completed_one_indeterminate_returns_medium(self):
+        rps = [self.rp_completed for _ in range(8)] + [self.rp_indeterminate]
+        self.assertEqual(compute_item_confidence(rps), "中")
+
+    def test_no_confirmed_returns_low(self):
+        rps = [self.rp_indeterminate, self.rp_indeterminate]
+        self.assertEqual(compute_item_confidence(rps), "低")
+
+    def test_invalid_evidence_returns_low(self):
+        rps = [self.rp_completed]
+        self.assertEqual(compute_item_confidence(rps, has_invalid_evidence=True), "低")
+
+    def test_fallback_evidence_returns_medium(self):
+        rps = [self.rp_completed, self.rp_indeterminate]
+        self.assertEqual(compute_item_confidence(rps, has_fallback_evidence=True), "中")
+
+    def test_empty_rps_returns_low(self):
+        self.assertEqual(compute_item_confidence([]), "低")
 
 
 if __name__ == "__main__":

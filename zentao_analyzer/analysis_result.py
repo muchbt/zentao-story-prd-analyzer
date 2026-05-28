@@ -319,14 +319,21 @@ def compute_item_confidence(
     has_fallback_evidence: bool = False,
     has_invalid_evidence: bool = False,
 ) -> str:
+    if not rps:
+        return "低"
     if has_invalid_evidence:
         return "低"
-    statuses = {rp.status for rp in rps}
-    if RPStatus.INDETERMINATE in statuses:
-        return "低"
-    if has_fallback_evidence:
+    confirmed_count = sum(
+        1 for rp in rps
+        if rp.status in (RPStatus.COMPLETED, RPStatus.PARTIALLY_COMPLETED)
+    )
+    if confirmed_count == len(rps) and all(rp.status == RPStatus.COMPLETED for rp in rps):
+        if has_fallback_evidence:
+            return "中"
+        return "高"
+    if confirmed_count > 0:
         return "中"
-    return "高"
+    return "低"
 
 
 def aggregate_evidence_from_rps(rps: List[RequirementPoint]) -> List[EvidenceLocation]:
@@ -830,8 +837,6 @@ class AnalysisResult:
 
     def is_insufficient_evidence(self) -> bool:
         if self.error:
-            return True
-        if self.confidence == "低":
             return True
         if not self.evidence:
             return True
