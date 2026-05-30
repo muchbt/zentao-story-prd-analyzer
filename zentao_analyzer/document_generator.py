@@ -7,6 +7,7 @@ import re
 
 from .zentao_client import ZentaoItem
 from .analysis_result import AnalysisResult, RequirementPoint, RPStatus, CodeImpactLocation
+from .markdown_to_html import markdown_to_html
 
 
 @dataclasses.dataclass
@@ -16,6 +17,7 @@ class DocumentResult:
     title: str
     document_type: str  # "PRD" | "ISSUE"
     document_path: str
+    html_path: str = ""
     is_diagnostic: bool = False
     error: str = ""
 
@@ -676,12 +678,20 @@ def generate_document(
     with open(document_path, "w", encoding="utf-8") as f:
         f.write(content)
 
+    html_path = ""
+    html_filename = filename.rsplit(".", 1)[0] + ".html"
+    html_path = os.path.join(output_dir, html_filename)
+    html_content = markdown_to_html(content, title=item.title)
+    with open(html_path, "w", encoding="utf-8") as f:
+        f.write(html_content)
+
     return DocumentResult(
         item_id=item.id,
         item_type=item.type,
         title=item.title,
         document_type=doc_type,
         document_path=document_path,
+        html_path=html_path,
         is_diagnostic=is_diagnostic,
         error=analysis.error,
     )

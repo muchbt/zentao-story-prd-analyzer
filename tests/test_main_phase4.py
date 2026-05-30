@@ -268,6 +268,30 @@ class TestMainPhase4(unittest.TestCase):
             self.assertIn("--id 5940", stderr.getvalue())
             self.assertNotIn("--id 5939", stderr.getvalue())
 
+    def test_parse_empty_is_retryable_and_prints_retry_command(self):
+        with tempfile.TemporaryDirectory() as td:
+            item = make_item()
+            analysis = make_analysis()
+            analysis.conclusion = "无法判断"
+            analysis.error = "Agent 返回内容不含 JSON"
+            analysis.error_kind = "parse_empty"
+            analysis.confidence = ""
+            argv = [
+                "zentao_analyzer.main.py", "--module", "requirement", "--id", "5939",
+                "--analyze", "--repo-path", td, "--output-root", td,
+                "--agent", "claude", "--agent-timeout", "5", "--quiet",
+            ]
+            with patch.object(main.ZentaoClient, "get_item", return_value=item):
+                with patch("zentao_analyzer.main.analyze", return_value=analysis):
+                    with patch.object(sys, "argv", argv):
+                        stderr = io.StringIO()
+                        with contextlib.redirect_stderr(stderr):
+                            code = main.main()
+            self.assertEqual(code, 0)
+            message = stderr.getvalue()
+            self.assertIn("条目 5939", message)
+            self.assertIn("Agent 响应无法解析为结构化结果", message)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

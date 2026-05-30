@@ -264,21 +264,25 @@ python3 main.py --module requirement --id 5939 --analyze --repo-path . --agent o
 python3 main.py --module requirement --id 5939 --analyze --repo-path . --agent codex
 ```
 
-`claude` 使用本机 Claude CLI。默认命令是 `claude`，默认通过 stdin 传入 prompt：
+`claude` 使用本机 Claude CLI，默认命令为 `claude` 并以 `-p --output-format json` 运行。默认通过 stdin 传入 prompt；`--claude-prompt-via arg` 可将 prompt 作为 `-p` 参数传递，避免 stdin 缓冲问题：
 
 ```bash
 python3 main.py --module requirement --id 5939 --analyze --repo-path . --agent claude
-python3 main.py --module requirement --id 5939 --analyze --repo-path . --agent claude --claude-command claude --claude-prompt-via arg
+python3 main.py --module requirement --id 5939 --analyze --repo-path . --agent claude --claude-prompt-via arg
 ```
 
-`codex` 调用本机 `codex exec` 命令；`opencode` 调用本机 `opencode run` 命令。显式传入 `--model` 时才会把模型参数传给对应 CLI。
+Claude 的 `--output-format json` 返回 JSON 信封（包含 `type`、`result`、`is_error` 等字段）。分析器从信封中提取 `result` 字段作为 Agent 回答，再从中解析结构化分析 JSON。这种方式将 Claude 的工具调用/思维过程与最终回答分离，避免思维文本污染结构化解析。
+
+`codex` 调用本机 `codex exec --sandbox read-only --json` 命令，默认启用 `--json` 输出 JSONL 事件流。分析器从 JSONL 流中查找最后一条 `type="item.completed"` 且 `item.type="agent_message"` 的事件，提取 `item.text` 作为 Agent 回答进行结构化解析。
+
+`opencode` 调用本机 `opencode run` 命令。显式传入 `--model` 时才会把模型参数传给对应 CLI。
 
 Agent CLI 子进程只用于读取和搜索目标仓库，并返回结构化 JSON 分析结果。只有 analyzer 进程可以写入 debug bundle、PRD/ISSUE 文档、summary、显式 `--output` 和显式 `--log-file`。
 
 默认权限策略：
 
-- Claude 默认限制为只读工具 `Read,Grep,Glob`。
-- Codex 默认使用 `codex exec --sandbox read-only`。
+- Claude 默认使用 `-p --output-format json --tools Read,Grep,Glob`，限制为只读工具。
+- Codex 默认使用 `codex exec --sandbox read-only --json`。
 - OpenCode 不默认启用 `--dangerously-skip-permissions`，只使用宿主 CLI 的默认权限行为。
 
 不要通过额外参数授予 Agent CLI 子进程写文件能力，除非你明确接受其可能修改目标仓库或生成文档的风险。
@@ -317,6 +321,13 @@ Debug bundle 会默认脱敏，但仍可能包含业务上下文、prompt 和模
 
 如果 Agent 返回的内容无法解析为结构化 JSON，分析器不会自动重试，也不会由宿主 Agent 绕过分析器继续生成替代结论。该条目仍会生成诊断文档、summary 和 debug bundle，并以 exit code `0` 结束。
 
+解析失败分为两类，均标记为可重试：
+
+| error_kind | 含义 | 典型场景 |
+|-----------|------|---------|
+| `parse` | Agent 回答中包含 JSON 但格式错误、引号未转义或结构不完整 | LLM 输出 JSON 不符合 Schema |
+| `parse_empty` | Agent 回答中完全不包含 JSON（无 `{`） | Claude 思考文本泄漏到 stdout、Codex JSONL 流中无 `agent_message` |
+
 最终 JSON 会标记可人工重试的条目：
 
 ```json
@@ -325,6 +336,12 @@ Debug bundle 会默认脱敏，但仍可能包含业务上下文、prompt 和模
     {
       "item_id": "5929",
       "error_kind": "parse",
+      "retryable": true,
+      "retry_reason": "agent_response_parse_failed"
+    },
+    {
+      "item_id": "5926",
+      "error_kind": "parse_empty",
       "retryable": true,
       "retry_reason": "agent_response_parse_failed"
     }

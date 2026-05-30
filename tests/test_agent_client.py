@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import unittest
@@ -76,6 +77,9 @@ class TestAgentClientClaude(unittest.TestCase):
         cmd = mock_run.call_args[0][0]
         self.assertIn("--model", cmd)
         self.assertIn("sonnet", cmd)
+        self.assertIn("-p", cmd)
+        self.assertIn("--output-format", cmd)
+        self.assertIn("json", cmd)
         self.assertIn("--tools", cmd)
         self.assertIn("Read,Grep,Glob", cmd)
         self.assertNotIn("--dangerously-skip-permissions", cmd)
@@ -88,9 +92,51 @@ class TestAgentClientClaude(unittest.TestCase):
             result = AgentClient(AgentConfig(agent="claude", prompt_via="arg", extra_args=["--foo"], timeout=5)).call("prompt")
         self.assertTrue(result.ok)
         cmd = mock_run.call_args[0][0]
+        self.assertIn("--output-format", cmd)
+        self.assertIn("json", cmd)
         self.assertIn("--foo", cmd)
         self.assertIn("-p", cmd)
         self.assertEqual(cmd[-1], "prompt")
+
+    def test_claude_json_envelope_success_extracts_result(self):
+        inner = json.dumps({"conclusion": "完成", "evidence": [], "recommendations": []})
+        envelope = json.dumps({"type": "result", "subtype": "success", "is_error": False, "result": inner})
+        completed = _subprocess_completed(stdout=envelope, stderr="", returncode=0)
+        with patch("zentao_analyzer.agent_client.subprocess.run", return_value=completed):
+            result = AgentClient(AgentConfig(agent="claude")).call("prompt")
+        self.assertTrue(result.ok)
+        self.assertEqual(result.json_data["conclusion"], "完成")
+
+    def test_claude_json_envelope_error_returns_runtime(self):
+        envelope = json.dumps({"type": "result", "subtype": "error", "is_error": True, "result": "Something went wrong"})
+        completed = _subprocess_completed(stdout=envelope, stderr="", returncode=0)
+        with patch("zentao_analyzer.agent_client.subprocess.run", return_value=completed):
+            result = AgentClient(AgentConfig(agent="claude")).call("prompt")
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_kind, "runtime")
+        self.assertIn("Something went wrong", result.error)
+
+    def test_claude_envelope_result_empty_text_returns_parse_empty(self):
+        envelope = json.dumps({"type": "result", "subtype": "success", "is_error": False, "result": "All key aspects have been investigated."})
+        completed = _subprocess_completed(stdout=envelope, stderr="", returncode=0)
+        with patch("zentao_analyzer.agent_client.subprocess.run", return_value=completed):
+            result = AgentClient(AgentConfig(agent="claude")).call("prompt")
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_kind, "parse_empty")
+
+    def test_parse_empty_text_without_braces(self):
+        completed = _subprocess_completed(stdout="All key aspects have been investigated. Here is the comprehensive analysis.", stderr="", returncode=0)
+        with patch("zentao_analyzer.agent_client.subprocess.run", return_value=completed):
+            result = AgentClient(AgentConfig(agent="claude")).call("prompt")
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_kind, "parse_empty")
+
+    def test_claude_non_envelope_json_falls_back_to_direct_parse(self):
+        completed = _subprocess_completed(stdout='{"conclusion":"完成","evidence":[]}', stderr="", returncode=0)
+        with patch("zentao_analyzer.agent_client.subprocess.run", return_value=completed):
+            result = AgentClient(AgentConfig(agent="claude")).call("prompt")
+        self.assertTrue(result.ok)
+        self.assertEqual(result.json_data["conclusion"], "完成")
 
 
 class TestAgentClientCodex(unittest.TestCase):
@@ -103,6 +149,7 @@ class TestAgentClientCodex(unittest.TestCase):
         self.assertEqual(cmd[:4], ["codex", "exec", "-C", "/repo"])
         self.assertIn("--sandbox", cmd)
         self.assertIn("read-only", cmd)
+        self.assertIn("--json", cmd)
         self.assertIn("-m", cmd)
         self.assertIn("gpt-5", cmd)
         self.assertNotIn("--dangerously-bypass-approvals-and-sandbox", cmd)
@@ -114,6 +161,46 @@ class TestAgentClientCodex(unittest.TestCase):
             result = AgentClient(AgentConfig(agent="codex", command="missing")).call("prompt")
         self.assertFalse(result.ok)
         self.assertEqual(result.error_kind, "config")
+
+    def test_codex_jsonl_extracts_agent_message(self):
+        inner = json.dumps({"conclusion": "完成", "evidence": []})
+        events = [
+            '{"type":"thread.started","thread_id":"1"}',
+            '{"type":"item.in_progress","item":{"type":"agent_message","text":"thinking"}}',
+            '{"type":"item.completed","item":{"type":"agent_message","text":' + json.dumps(inner) + '}}',
+        ]
+        completed = _subprocess_completed(stdout="\n".join(events), stderr="", returncode=0)
+        with patch("zentao_analyzer.agent_client.subprocess.run", return_value=completed):
+            result = AgentClient(AgentConfig(agent="codex")).call("prompt")
+        self.assertTrue(result.ok)
+        self.assertEqual(result.json_data["conclusion"], "完成")
+
+    def test_codex_jsonl_no_agent_message_returns_failure(self):
+        events = [
+            '{"type":"thread.started","thread_id":"1"}',
+            '{"type":"item.completed","item":{"type":"tool_call","text":"running tool"}}',
+        ]
+        completed = _subprocess_completed(stdout="\n".join(events), stderr="", returncode=0)
+        with patch("zentao_analyzer.agent_client.subprocess.run", return_value=completed):
+            result = AgentClient(AgentConfig(agent="codex")).call("prompt")
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_kind, "parse_empty")
+
+    def test_codex_single_line_jsonl_event_extracts_agent_message(self):
+        inner = json.dumps({"conclusion": "完成", "evidence": []})
+        event = '{"type":"item.completed","item":{"type":"agent_message","text":' + json.dumps(inner) + '}}'
+        completed = _subprocess_completed(stdout=event, stderr="", returncode=0)
+        with patch("zentao_analyzer.agent_client.subprocess.run", return_value=completed):
+            result = AgentClient(AgentConfig(agent="codex")).call("prompt")
+        self.assertTrue(result.ok)
+        self.assertEqual(result.json_data["conclusion"], "完成")
+
+    def test_codex_single_line_json_falls_back_to_direct_parse(self):
+        completed = _subprocess_completed(stdout='{"conclusion":"完成"}', stderr="", returncode=0)
+        with patch("zentao_analyzer.agent_client.subprocess.run", return_value=completed):
+            result = AgentClient(AgentConfig(agent="codex")).call("prompt")
+        self.assertTrue(result.ok)
+        self.assertEqual(result.json_data["conclusion"], "完成")
 
 
 class TestAgentClientOpenCode(unittest.TestCase):

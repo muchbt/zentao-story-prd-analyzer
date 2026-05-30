@@ -27,6 +27,7 @@ def build_summary_item(
         "priority": item.priority,
         "document_type": document.document_type,
         "document_path": document.document_path,
+        "html_path": document.html_path,
         "is_diagnostic": document.is_diagnostic,
         "conclusion": analysis.conclusion,
         "confidence": analysis.confidence,

@@ -180,7 +180,7 @@ def build_claude_command(config: AgentConfig, prompt: str):
     if config.model and "--model" not in args:
         args.extend(["--model", config.model])
     if "--output-format" not in args:
-        args.extend(["--output-format", "text"])
+        args.extend(["--output-format", "json"])
     if "--append-system-prompt" not in args:
         args.extend(["--append-system-prompt", CLAUDE_SYSTEM_PROMPT])
     tool_flags = ["--tools", "--allowedTools", "--allowed-tools", "--disallowedTools", "--disallowed-tools"]
@@ -192,7 +192,34 @@ def build_claude_command(config: AgentConfig, prompt: str):
         args.extend(["-p", prompt])
         return args, None
     args = [arg for arg in args if arg not in ("-p", "--print")]
+    args.append("-p")
     return args, prompt
+
+
+def _parse_codex_jsonl(stdout_text: str) -> Optional[str]:
+    lines = stdout_text.splitlines()
+    last_agent_text = None
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        if event.get("type") != "item.completed":
+            continue
+        item = event.get("item")
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") != "agent_message":
+            continue
+        text = item.get("text")
+        if text is not None:
+            last_agent_text = str(text)
+    return last_agent_text
 
 
 def _safe_join_error(stdout: str, stderr: str) -> str:
@@ -216,6 +243,17 @@ class AgentClient:
 
     def _parse_text(self, text: str, raw_agent: str, model: str, duration_ms: int = 0) -> AgentResult:
         redacted_text = redact_sensitive(text)
+        if not text or "{" not in text:
+            return AgentResult(
+                ok=False,
+                text=redacted_text,
+                raw_response=redacted_text,
+                error="Agent 返回内容不含 JSON",
+                error_kind="parse_empty",
+                duration_ms=duration_ms,
+                agent=raw_agent,
+                model=model,
+            )
         try:
             data = extract_json_object(text)
         except json.JSONDecodeError:
@@ -274,7 +312,35 @@ class AgentClient:
                 agent="claude",
                 model=self.config.model,
             )
-        return self._parse_text(stdout.strip(), raw_agent="claude", model=self.config.model, duration_ms=_now_ms() - started)
+        stdout_text = stdout.strip()
+        if stdout_text and stdout_text.startswith("{"):
+            try:
+                envelope = json.loads(stdout_text)
+            except json.JSONDecodeError:
+                pass
+            else:
+                if isinstance(envelope, dict) and "result" in envelope:
+                    if envelope.get("is_error"):
+                        err_result = envelope.get("result")
+                        if err_result:
+                            err_text = redact_sensitive(str(err_result))
+                        else:
+                            err_text = redact_sensitive(stderr.strip() or "Claude 返回错误")
+                        return AgentResult(
+                            ok=False,
+                            raw_response=redact_sensitive(stdout_text),
+                            error=err_text,
+                            error_kind="runtime",
+                            duration_ms=_now_ms() - started,
+                            agent="claude",
+                            model=self.config.model,
+                        )
+                    return self._parse_text(
+                        str(envelope["result"]).strip(),
+                        raw_agent="claude", model=self.config.model,
+                        duration_ms=_now_ms() - started,
+                    )
+        return self._parse_text(stdout_text, raw_agent="claude", model=self.config.model, duration_ms=_now_ms() - started)
 
     def _call_codex(self, prompt: str) -> AgentResult:
         started = _now_ms()
@@ -289,6 +355,8 @@ class AgentClient:
         ] + list(self.config.extra_args or [])
         if self.config.model:
             args.extend(["-m", self.config.model])
+        if "--json" not in args:
+            args.append("--json")
         try:
             completed = subprocess.run(
                 args,
@@ -319,7 +387,26 @@ class AgentClient:
                 agent="codex",
                 model=self.config.model,
             )
-        return self._parse_text(stdout.strip(), raw_agent="codex", model=self.config.model, duration_ms=_now_ms() - started)
+        stdout_text = stdout.strip()
+        if stdout_text and stdout_text.startswith("{"):
+            agent_text = _parse_codex_jsonl(stdout_text)
+            if agent_text:
+                return self._parse_text(
+                    agent_text.strip(),
+                    raw_agent="codex", model=self.config.model,
+                    duration_ms=_now_ms() - started,
+                )
+            if "\n" in stdout_text:
+                return AgentResult(
+                    ok=False,
+                    raw_response=redact_sensitive(stdout_text),
+                    error="Codex JSONL 事件流中未找到最终 agent_message",
+                    error_kind="parse_empty",
+                    duration_ms=_now_ms() - started,
+                    agent="codex",
+                    model=self.config.model,
+                )
+        return self._parse_text(stdout_text, raw_agent="codex", model=self.config.model, duration_ms=_now_ms() - started)
 
     def _call_opencode(self, prompt: str) -> AgentResult:
         started = _now_ms()

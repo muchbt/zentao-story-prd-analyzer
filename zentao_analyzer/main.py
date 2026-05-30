@@ -375,7 +375,7 @@ def main():
         )
         logger.info("analyze", "done", status="done", item_id=item.id, confidence=result.confidence)
         error_kind = _plain_value(getattr(result, "error_kind", ""), "")
-        retryable = error_kind == "parse"
+        retryable = error_kind in ("parse", "parse_empty")
         if result.error and error_kind == "timeout":
             current_timeout = runtime_config.agent_timeout
             suggested_timeout = current_timeout * 2
@@ -469,11 +469,12 @@ def main():
                 item_id=item.id,
                 issues=document_consistency_issues,
             )
-        logger.info("generate_docs", "done", status="done", item_id=item.id, document_path=doc.document_path)
+        logger.info("generate_docs", "done", status="done", item_id=item.id, document_path=doc.document_path, html_path=doc.html_path)
         documents.append({
             "item_id": doc.item_id,
             "document_type": doc.document_type,
             "document_path": doc.document_path,
+            "html_path": doc.html_path,
             "is_diagnostic": doc.is_diagnostic,
             "consistency_issues": document_consistency_issues,
         })

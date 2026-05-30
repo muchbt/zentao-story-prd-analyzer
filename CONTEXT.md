@@ -70,6 +70,14 @@ _Avoid_: Seed Path、Code Evidence
 被预加载为 Agent 起始上下文的仓库内文件路径。
 _Avoid_: Search Hint、Cited Evidence Location
 
+**Protocol Hint**:
+指向跨仓库通信协议标识的 Search Hint，例如通信命令、消息 ID 或协议字段。
+_Avoid_: Requirement Source、Code Evidence、RPC
+
+**Protocol Hint Type**:
+Protocol Hint 在通信协议中的层级，包括 `cmd_id`、`msg`、`field` 或 `text`。
+_Avoid_: 代码符号类型、证据类型
+
 **Rejected Clue**:
 因越界、不存在或不是文件而未加载的 Seed Path。
 _Avoid_: 缺少实现
@@ -81,6 +89,14 @@ _Avoid_: Search Hint、Code Impact Analysis
 **Cited Evidence Location**:
 Agent 明确作为结论依据引用的源码文件与行号范围。
 _Avoid_: 搜索命中、Seed Path
+
+**Role Evidence Status**:
+某个 Repository Role 对特定 Requirement Point 或 Protocol Hint 的证据命中状态。
+_Avoid_: Completion Assessment、搜索日志
+
+**Protocol Trace Status**:
+Protocol Hint 对应的跨 Repository Role 证据闭环状态。
+_Avoid_: Role Evidence Status、Completion Assessment
 
 ### 输出与执行边界
 
@@ -109,12 +125,28 @@ _Avoid_: Agent CLI Subprocess
 _Avoid_: Analyzer Process、文档写入者
 
 **Target Repository**:
-被分析 Feature Item 或 Defect Item 对应实现所在的本地代码仓库。
+被分析 Feature Item 或 Defect Item 对应实现所在的一个本地代码仓库。
 _Avoid_: analyzer 源码仓库、输出目录
+
+**Target Repository Set**:
+一次分析中共同承载同一 Feature Item 或 Defect Item 实现依据的一个或多个 Target Repository。
+_Avoid_: 多次独立分析结果、输出目录集合
+
+**Repository Role**:
+Target Repository Set 中用于区分代码职责边界的用户可读名称。
+_Avoid_: 路径别名、模块名推断
+
+**Primary Repository Role**:
+一次分析中优先理解需求或缺陷触发语境的 Repository Role。
+_Avoid_: 唯一证据范围、所有者断言
 
 **Agent CLI Skill**:
 供 Codex 或 Claude Code 等环境发现并触发 analyzer 的安装式调用包装。
 _Avoid_: `SKILL.yaml`、Python package
+
+**Structured Clue File**:
+保存 Search Hint、Protocol Hint、Seed Path 与仓库角色输入的机器可读线索文件。
+_Avoid_: Requirement Source、PRD Document
 
 ## Relationships
 
@@ -129,17 +161,32 @@ _Avoid_: `SKILL.yaml`、Python package
 - **Requirement Interpretation** 可展示明确标记为代码侧候选上下文的信息，但该信息不定义需求含义，也不产生新的 **Requirement Point**。
 - **Code Impact Analysis** 可展示经位置校验的相关源码；相关代码位置不自动证明需求已完成。
 - **Completion Assessment** 以逐点有效 **Code Evidence** 为依据；无依据不能确认完成或缺口。
+- 跨 **Repository Role** 的 **Completion Assessment** 不能由单侧 **Code Evidence** 单独确认完成。
+- 跨仓库输出以 **Requirement Point** 为主维度，以 **Repository Role** 作为证据子维度。
 - **Implementation Recommendation** 与现有代码事实及完成度证据分开展示，并明确标记为建议。
 - 一个成功生成文档的 **Feature Item** 产生一个 **PRD Document**。
 - 一个成功生成文档的 **Defect Item** 产生一个 **ISSUE Document**。
 - **PRD Document** 同时包含可理解的需求整理与代码依据约束的完成度分析；二者不可相互替代。
 - **Search Hint** 只引导搜索，不是 **Requirement Source** 或 **Code Evidence**。
+- **Protocol Hint** 是 **Search Hint** 的一种，表示跨 **Repository Role** 的通信协议线索。
+- **Protocol Hint Type** 用于指导搜索起点和闭环判定重点，不能替代 **Code Evidence**。
+- **Protocol Hint** 可限定适用的 **Repository Role**；未限定时适用于整个 **Target Repository Set**。
+- 一个 **Target Repository Set** 包含一个或多个带 **Repository Role** 的 **Target Repository**。
+- **Repository Role** 由用户提供，用于表达 MCU、SoC、应用、Bootloader 或协议栈等代码职责边界。
+- **Primary Repository Role** 只影响搜索和展示优先级，不限制 **Code Evidence** 的有效范围。
+- 单仓输入在内部视为只有隐式 `main` **Repository Role** 的 **Target Repository Set**，但单仓输出不展示角色维度。
+- **Structured Clue File** 可承载按条目隔离的 **Search Hint**、**Protocol Hint** 与带 **Repository Role** 的 **Seed Path**。
+- **Agent CLI Skill** 可将用户自然语言整理为 **Structured Clue File**，但不得改变 **Requirement Source**。
+- **Agent CLI Skill** 可自动转写用户明确提供的线索；需要猜测线索类型、仓库角色或条目归属时必须先取得用户确认。
 - **Seed Path** 必须位于 **Target Repository** 内且指向文件，否则成为 **Rejected Clue**。
+- 多仓 **Cited Evidence Location** 必须包含 **Repository Role**、仓库相对路径和行号范围。
 - **Cited Evidence Location** 可支撑已实现、缺口或限制结论，但单独存在不等同于实现完成。
+- **Role Evidence Status** 表示角色维度的命中、未命中或不确定状态，不等同于最终 **Completion Assessment**。
+- **Protocol Trace Status** 可为 closed_loop、partial、not_found 或 ambiguous，不等同于最终 **Completion Assessment**。
 - **Analyzer Process** 是生成输出的唯一写入者。
-- **Agent CLI Subprocess** 只读取和搜索 **Target Repository**，不得写入源码、配置、测试或 analyzer 输出。
+- **Agent CLI Subprocess** 只读取和搜索 **Target Repository Set**，不得写入源码、配置、测试或 analyzer 输出。
 - **ISSUE Document** 是输出类型，不是禅道输入模块名称。
-- **Agent CLI Skill** 调用 analyzer 分析 **Target Repository**；它不是新的分析阶段。
+- **Agent CLI Skill** 调用 analyzer 分析 **Target Repository Set**；它不是新的分析阶段。
 
 ## Example Dialogue
 
@@ -148,6 +195,9 @@ _Avoid_: `SKILL.yaml`、Python package
 
 > **Dev:** “代码里找到了 `XCALL_STATUS_INTERNAL_CALLBACK_MODE`，可以把它写成需求已定义的术语吗？”
 > **Domain expert:** “只能作为代码侧候选上下文展示；除非需求原文定义了含义，否则它不是需求事实。”
+
+> **Dev:** “用户提供了 MCU 和 SoC 通信协议的命令 ID，可以把它当作需求点吗？”
+> **Domain expert:** “不能。它是 **Protocol Hint**，只能指导跨仓库搜索，不能改写 **Requirement Source**。”
 
 > **Dev:** “建议新增一个仲裁器模块是否表示仓库已有该实现？”
 > **Domain expert:** “不是。它属于 **Implementation Recommendation**，必须与已有代码关联和 **Code Evidence** 分开。”
@@ -164,3 +214,5 @@ _Avoid_: `SKILL.yaml`、Python package
 - “代码中出现的术语或范围”曾被误解为需求定义；已明确只能作为带来源标识的候选上下文。
 - “建议新增模块或接口”曾被误解为现有实现；已明确其属于 **Implementation Recommendation**。
 - “Agent 写入文档”会模糊安全边界；已明确仅 **Analyzer Process** 写入正式产物。
+- “RPC”曾被用来泛指 MCU 与 SoC 的跨仓库关联；已明确采用 **Protocol Hint** 表达通信协议线索，避免把协议线索误写成需求来源或代码证据。
+- “Repository Role”和“Seed Path”曾被混用；已明确 **Repository Role** 标识仓库职责，**Seed Path** 标识仓库内起始文件。
