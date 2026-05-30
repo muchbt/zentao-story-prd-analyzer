@@ -88,5 +88,29 @@ class TestSummaryReport(unittest.TestCase):
             self.assertEqual(data["prd_dir"], os.path.join(td, "prd"))
             self.assertEqual(data["issue_dir"], os.path.join(td, "issue"))
 
+    def test_multi_repo_summary_counts_role_evidence_and_protocol_traces(self):
+        from zentao_analyzer.analysis_result import EvidenceLocation, ProtocolTrace
+        from zentao_analyzer.repositories import parse_repo_args
+
+        with tempfile.TemporaryDirectory() as soc, tempfile.TemporaryDirectory() as mcu:
+            repo_set = parse_repo_args([f"soc={soc}", f"mcu={mcu}"])
+            analysis = AnalysisResult(
+                item_id="2",
+                item_type="bug",
+                item_title="Bug",
+                cited_evidence_locations=[EvidenceLocation(role="soc", path="src/a.c", line_start=1, line_end=2)],
+                protocol_traces=[ProtocolTrace(roles=["soc", "mcu"], hint_type="cmd_id", value="1", status="partial")],
+            )
+            data = build_summary_item(
+                ZentaoItem(id="2", type="bug", title="Bug"),
+                analysis,
+                DocumentResult("2", "bug", "Bug", "ISSUE", "docs/issue/a.md", False),
+                {"supported": False},
+                repo_set=repo_set,
+            )
+        self.assertEqual(data["repositories"][0]["role"], "soc")
+        self.assertEqual(data["repositories"][0]["evidence_count"], 1)
+        self.assertEqual(data["protocol_trace_status_counts"], {"partial": 1})
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

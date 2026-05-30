@@ -19,6 +19,7 @@ from zentao_analyzer.analysis_result import (
     RequirementScenario,
     RequirementFlow,
     RequirementPoint,
+    ProtocolTrace,
     RPStatus,
 )
 from zentao_analyzer.document_generator import generate_document, sanitize_title, DocumentResult, validate_document_consistency
@@ -577,6 +578,27 @@ class TestDocumentGenerator(unittest.TestCase):
             with open(doc.document_path) as f:
                 content = f.read()
             self.assertNotIn("诊断文档：当前条目未能生成完整", content)
+
+    def test_multi_repo_document_shows_role_paths_and_protocol_trace(self):
+        with tempfile.TemporaryDirectory() as td:
+            item = ZentaoItem(id="26", type="story", title="T")
+            location = EvidenceLocation(role="soc", path="src/send.c", line_start=1, line_end=2, reason="sender")
+            analysis = AnalysisResult(
+                item_id="26",
+                item_type="story",
+                item_title="T",
+                conclusion="无法判断",
+                evidence=["soc:src/send.c:1-2 sender"],
+                cited_evidence_locations=[location],
+                requirement_points=[RequirementPoint(id="RP-001", description="A", status="无法判断", evidence=[location])],
+                protocol_traces=[ProtocolTrace(roles=["soc", "mcu"], hint_type="cmd_id", value="0x1234", status="partial", evidence=[location])],
+            )
+            doc = generate_document(item, analysis, output_root=td)
+            with open(doc.document_path, encoding="utf-8") as f:
+                content = f.read()
+        self.assertIn("soc:src/send.c", content)
+        self.assertIn("协议线索闭环", content)
+        self.assertIn("partial", content)
 
 
 if __name__ == "__main__":

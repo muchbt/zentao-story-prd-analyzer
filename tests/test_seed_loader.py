@@ -5,7 +5,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from zentao_analyzer.code_clues import RejectedSeedPath
+from zentao_analyzer.code_clues import RejectedSeedPath, RoleSeedPath
 from zentao_analyzer.seed_loader import SeedLocation, load_seed_context
 
 
@@ -48,6 +48,13 @@ class TestSeedLoader(unittest.TestCase):
         )
         self.assertEqual(result.snippets, [])
         self.assertEqual([item.reason for item in result.rejected_seed_paths], ["outside_repo", "read_failed"])
+
+    def test_role_seed_path_uses_role_relative_display_path(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = self._file(td, "src/a.c", "int a;\n")
+            result = load_seed_context([RoleSeedPath(role="soc", path=path, relative_path="src/a.c")])
+        self.assertEqual(result.snippets[0]["path"], "soc:src/a.c")
+        self.assertEqual(result.seed_locations[0].role, "soc")
 
 
 if __name__ == "__main__":

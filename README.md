@@ -392,6 +392,39 @@ python3 main.py --module requirement --project 3 --analyze --repo-path . --clues
 
 Seed Path 必须是 `--repo-path` 内的文件。越界、目录或不存在的路径不会被读取，会记录到 debug bundle 的 `rejected_seed_paths.json`。
 
+### 多 Repo 搜索
+
+新调用优先使用 `--repo`。单仓可传一次路径；多仓必须为每个仓库提供 Repository Role：
+
+```bash
+python3 main.py --module requirement --id 5939 --analyze \
+  --repo soc=/path/to/soc \
+  --repo mcu=/path/to/mcu \
+  --protocol-hint soc,mcu:cmd_id=0x1234
+```
+
+`--repo-path` 仍作为旧单仓兼容入口；不能和 `--repo` 同时使用。多仓 evidence 使用 `role + repo-relative path + lines` 标识位置，例如 `soc:src/send.c:10-20`。
+
+复杂场景使用 Structured Clue File：
+
+```json
+{
+  "repositories": {"soc": "../soc", "mcu": "../mcu"},
+  "items": {
+    "5939": {
+      "primary_role": "soc",
+      "clues": ["callback mode"],
+      "protocol_hints": [
+        {"roles": ["soc", "mcu"], "type": "cmd_id", "value": "0x1234"}
+      ],
+      "paths": {"soc": ["src/send.c"], "mcu": ["src/recv.c"]}
+    }
+  }
+}
+```
+
+Protocol Hint 支持 `cmd_id`、`msg`、`field`、`text`。它只指导 Agent 沿通信协议搜索并报告 `closed_loop`、`partial`、`not_found` 或 `ambiguous`，不构成需求来源或代码证据。
+
 ### 证据位置
 
 debug bundle 默认保存证据位置文件：

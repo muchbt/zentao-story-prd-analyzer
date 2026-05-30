@@ -6,8 +6,9 @@ from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from zentao_analyzer.analyzer import analyze, validate_evidence_locations, validate_code_impact_locations
-from zentao_analyzer.analysis_result import AnalysisResult, EvidenceLocation, CodeImpactLocation
+from zentao_analyzer.analyzer import analyze, validate_evidence_locations, validate_code_impact_locations, validate_protocol_traces
+from zentao_analyzer.analysis_result import AnalysisResult, EvidenceLocation, CodeImpactLocation, ProtocolTrace
+from zentao_analyzer.repositories import parse_repo_args
 from zentao_analyzer.zentao_client import ZentaoItem
 
 
@@ -50,6 +51,20 @@ class TestAnalyzer(unittest.TestCase):
         self.assertEqual(records[1], ("response", "4", '{"ok":true}'))
         self.assertEqual(result.analysis_status, "requirement_points_unavailable")
 
+    def test_multi_repo_uses_role_workspace_as_agent_cwd(self):
+        with tempfile.TemporaryDirectory() as soc, tempfile.TemporaryDirectory() as mcu:
+            repo_set = parse_repo_args([f"soc={soc}", f"mcu={mcu}"])
+            item = ZentaoItem(id="5", type="bug", title="B")
+            from zentao_analyzer.agent_client import AgentConfig
+            config = AgentConfig(agent="claude", cwd="/old")
+            with patch("zentao_analyzer.analyzer.call_llm", return_value={"conclusion": "无法定位", "evidence": [], "confidence": "低"}) as mock_llm:
+                analyze(item, repo_path=soc, repo_set=repo_set, agent_config=config)
+            passed_config = mock_llm.call_args.kwargs["agent_config"]
+            prompt = mock_llm.call_args.args[0]
+        self.assertIn("Target Repository Set", prompt)
+        self.assertNotEqual(passed_config.cwd, "/old")
+        self.assertIn("zentao-analyzer-repos-", passed_config.cwd)
+
 
 class TestEvidenceValidation(unittest.TestCase):
     def test_validate_evidence_locations_accepts_existing_lines(self):
@@ -87,6 +102,38 @@ class TestEvidenceValidation(unittest.TestCase):
             ])
             issues = validate_evidence_locations(td, result)
         self.assertEqual([issue.reason for issue in issues], ["line_out_of_range", "outside_repo"])
+
+    def test_multi_repo_evidence_requires_known_role_and_resolves_role_root(self):
+        with tempfile.TemporaryDirectory() as soc, tempfile.TemporaryDirectory() as mcu:
+            with open(os.path.join(soc, "send.c"), "w", encoding="utf-8") as f:
+                f.write("1\n")
+            repo_set = parse_repo_args([f"soc={soc}", f"mcu={mcu}"])
+            valid = AnalysisResult(item_id="1", item_type="bug", item_title="T", cited_evidence_locations=[
+                EvidenceLocation(role="soc", path="send.c", line_start=1, line_end=1),
+            ])
+            self.assertEqual(validate_evidence_locations(repo_set, valid), [])
+            invalid = AnalysisResult(item_id="1", item_type="bug", item_title="T", cited_evidence_locations=[
+                EvidenceLocation(path="send.c", line_start=1, line_end=1),
+                EvidenceLocation(role="app", path="send.c", line_start=1, line_end=1),
+            ])
+            issues = validate_evidence_locations(repo_set, invalid)
+        self.assertEqual([issue.reason for issue in issues], ["missing_role", "unknown_role"])
+
+    def test_closed_loop_is_corrected_when_scoped_role_has_no_valid_evidence(self):
+        with tempfile.TemporaryDirectory() as soc, tempfile.TemporaryDirectory() as mcu:
+            with open(os.path.join(soc, "send.c"), "w", encoding="utf-8") as f:
+                f.write("1\n")
+            repo_set = parse_repo_args([f"soc={soc}", f"mcu={mcu}"])
+            traces = [ProtocolTrace(
+                roles=["soc", "mcu"],
+                hint_type="cmd_id",
+                value="0x1234",
+                status="closed_loop",
+                evidence=[EvidenceLocation(role="soc", path="send.c", line_start=1, line_end=1)],
+            )]
+            issues = validate_protocol_traces(repo_set, traces)
+        self.assertEqual(traces[0].status, "partial")
+        self.assertEqual(issues[0].reason, "protocol_trace_closed_loop_missing_role_evidence")
 
 
 class TestCodeImpactLocationValidation(unittest.TestCase):

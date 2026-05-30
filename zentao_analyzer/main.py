@@ -7,12 +7,14 @@ import sys
 
 from .agent_client import AgentConfig
 from .analyzer import analyze
-from .analysis_result import RPStatus
+from .analysis_result import AnalysisResult, RPStatus
 from .app_config import build_runtime_config
-from .code_clues import build_search_hints, build_seed_paths, load_clues_file
+from .code_clues import build_role_seed_paths, build_search_hints, build_seed_paths, load_clues_file
 from .debug_bundle import build_debug_bundle
 from .document_generator import generate_document, validate_document_consistency
 from .run_logger import RunLogger, redact_sensitive
+from .protocol_hints import ProtocolHintInputError, normalize_protocol_hints
+from .repositories import RepositoryInputError, parse_repo_args
 from .summary_report import build_summary_item, write_summary_report
 from .writeback import prepare_writeback_status
 from .zentao_client import ZentaoClient, ZentaoError, ZentaoFormatError, ZentaoItem
@@ -45,6 +47,11 @@ def _append_option(command, flag, value):
         command.extend([flag, str(value)])
 
 
+def _append_repeat_option(command, flag, values):
+    for value in values or []:
+        _append_option(command, flag, value)
+
+
 def _build_parse_retry_command(args, runtime_config, item_id, agent_timeout=None):
     command = [
         "python3",
@@ -54,9 +61,11 @@ def _build_parse_retry_command(args, runtime_config, item_id, agent_timeout=None
         "--id",
         str(item_id),
         "--analyze",
-        "--repo-path",
-        str(runtime_config.repo_path),
     ]
+    if getattr(args, "repo", None):
+        _append_repeat_option(command, "--repo", args.repo)
+    else:
+        _append_option(command, "--repo-path", runtime_config.repo_path)
     _append_option(command, "--agent", runtime_config.agent)
     _append_option(command, "--model", runtime_config.model)
     _append_option(
@@ -68,6 +77,7 @@ def _build_parse_retry_command(args, runtime_config, item_id, agent_timeout=None
     _append_option(command, "--clues", args.clues)
     _append_option(command, "--paths", args.paths)
     _append_option(command, "--clues-file", args.clues_file)
+    _append_repeat_option(command, "--protocol-hint", getattr(args, "protocol_hint", None))
     _append_option(command, "--debug-bundle-dir", args.debug_bundle_dir)
     if args.requirement_file:
         _append_option(command, "--title", args.title)
@@ -154,7 +164,8 @@ def main():
     parser.add_argument("--use-env", action="store_true", help="强制使用环境变量登录")
     parser.add_argument("--output", help="阶段一结果输出 JSON 文件路径（默认 stdout）")
     parser.add_argument("--analyze", action="store_true", help="获取数据后继续执行代码分析和 PRD 生成")
-    parser.add_argument("--repo-path", default=os.environ.get("REPO_PATH", "."), help="代码仓库路径")
+    parser.add_argument("--repo-path", help="兼容入口：单一代码仓库路径")
+    parser.add_argument("--repo", action="append", help="代码仓库；单仓传 path，多仓重复传 role=path")
     parser.add_argument("--agent", default=os.environ.get("LLM_AGENT"), help="LLM Agent")
     parser.add_argument("--model", help="LLM 模型名，显式指定时传给所选 Agent CLI")
     parser.add_argument("--agent-timeout", type=int, help="Agent 调用超时时间，单位秒")
@@ -170,8 +181,9 @@ def main():
     parser.add_argument("--debug-bundle-dir", help="debug bundle 输出目录")
     parser.add_argument("--debug-include-code", action="store_true", help="debug bundle 保存代码上下文快照")
     parser.add_argument("--clues", help="搜索建议，逗号分隔，写入 Agent prompt")
-    parser.add_argument("--paths", help="种子文件路径，逗号分隔，必须是 repo-path 内文件")
-    parser.add_argument("--clues-file", help="按禅道条目 ID 提供代码线索的 JSON 文件")
+    parser.add_argument("--paths", help="种子文件路径，逗号分隔；多仓使用 role=relative/path")
+    parser.add_argument("--clues-file", help="结构化代码线索 JSON 文件，支持 repositories 和按条目隔离的 items")
+    parser.add_argument("--protocol-hint", action="append", help="通信协议线索，可重复；格式 [role1,role2:]type=value 或文本")
     parser.add_argument("--output-root", default="docs", help="PRD/ISSUE 文档输出根目录")
     parser.add_argument("--requirement-file", help="用户提供的需求正文文件路径；与 --id 和 --title 一起使用，不从禅道读取")
     parser.add_argument("--title", help="需求标题；Provided Requirement 模式下必须提供")
@@ -300,7 +312,22 @@ def main():
             print(json.dumps(base_result, ensure_ascii=False, indent=2))
         return 0
 
-    repo_path = args.repo_path
+    try:
+        clues_by_item = load_clues_file(args.clues_file) if args.clues_file else load_clues_file("")
+        fallback_repo_path = args.repo_path or ""
+        if not args.repo and not fallback_repo_path and not clues_by_item.repositories:
+            fallback_repo_path = os.environ.get("REPO_PATH", ".")
+        repo_set = parse_repo_args(
+            repo_values=args.repo,
+            repo_path=fallback_repo_path,
+            clues_file_repositories=clues_by_item.repositories,
+            clues_file_dir=clues_by_item.directory,
+        )
+    except (OSError, ValueError, RepositoryInputError) as exc:
+        print(f"[错误] 多仓输入预处理失败: {exc}", file=sys.stderr)
+        return 4
+    repo_path = repo_set.repositories[0].path
+    runtime_config.repo_path = repo_path
     output_root = args.output_root
 
     run_id = args.id or args.project or args.product or "list"
@@ -330,18 +357,20 @@ def main():
 
     scan_summary = {
         "repo_path": repo_path,
+        "repositories": repo_set.to_dict()["repositories"],
         "max_seed_files": 3,
         "max_lines_per_seed": 50,
         "max_seed_tokens": 2000,
     }
     debug_bundle.write_scan_summary(scan_summary)
+    debug_bundle.write_repositories(repo_set.to_dict())
     debug_bundle.write_code_context({
         "repo_path": repo_path,
+        "repositories": repo_set.to_dict()["repositories"],
         "items": [{"id": item.id} for item in items],
     })
 
     agent_config = AgentConfig(**runtime_config.agent_config_dict())
-    clues_by_item = load_clues_file(args.clues_file) if args.clues_file else {}
 
     def record_debug(kind, item, payload):
         if kind == "prompt":
@@ -356,24 +385,86 @@ def main():
     evidence_location_items = []
     all_rejected_seed_paths = []
     writeback = prepare_writeback_status()
+    normalized_clues = {"repositories": repo_set.to_dict()["repositories"], "items": {}}
+    try:
+        cli_protocol_hints = normalize_protocol_hints(
+            list(getattr(args, "protocol_hint", None) or []),
+            repo_set,
+            source="cli",
+        )
+    except ProtocolHintInputError as exc:
+        print(f"[错误] 通信协议线索无效: {exc}", file=sys.stderr)
+        return 4
 
     for item in items:
         search_hints = build_search_hints(item.id, cli_clues=args.clues, clues_by_item=clues_by_item)
-        seed_paths, rejected_seed_paths = build_seed_paths(item.id, repo_path=repo_path, cli_paths=args.paths, clues_by_item=clues_by_item)
+        item_clues = clues_by_item.get(str(item.id), {})
+        primary_role = str(item_clues.get("primary_role", "") or "").strip()
+        preprocess_error = ""
+        if primary_role and primary_role not in repo_set.roles:
+            preprocess_error = f"primary_role 未知: {primary_role}"
+        try:
+            file_protocol_hints = normalize_protocol_hints(
+                list(item_clues.get("protocol_hints", []) or []),
+                repo_set,
+                source="clues_file",
+            )
+        except ProtocolHintInputError as exc:
+            file_protocol_hints = []
+            preprocess_error = preprocess_error or f"通信协议线索无效: {exc}"
+        protocol_hints = list(cli_protocol_hints)
+        seen_protocol_hints = {(tuple(hint.roles), hint.type, hint.value) for hint in protocol_hints}
+        for hint in file_protocol_hints:
+            key = (tuple(hint.roles), hint.type, hint.value)
+            if key not in seen_protocol_hints:
+                protocol_hints.append(hint)
+                seen_protocol_hints.add(key)
+        if repo_set.show_roles:
+            seed_paths, rejected_seed_paths = build_role_seed_paths(
+                item.id, repo_set=repo_set, cli_paths=args.paths, clues_by_item=clues_by_item,
+            )
+        else:
+            seed_paths, rejected_seed_paths = build_seed_paths(
+                item.id, repo_path=repo_path, cli_paths=args.paths, clues_by_item=clues_by_item,
+            )
+        role_errors = [item for item in rejected_seed_paths if item.reason in ("missing_role", "unknown_role")]
+        if role_errors:
+            first = role_errors[0]
+            if first.source == "cli":
+                print(f"[错误] Seed Path 缺少或引用未知 Repository Role: {first.value}", file=sys.stderr)
+                return 4
+            preprocess_error = preprocess_error or f"Seed Path 缺少或引用未知 Repository Role: {first.value}"
+        normalized_clues["items"][str(item.id)] = {
+            "search_hints": search_hints,
+            "protocol_hints": [hint.to_dict() for hint in protocol_hints],
+            "seed_paths": [
+                dataclasses.asdict(path) if dataclasses.is_dataclass(path) else {"path": path}
+                for path in seed_paths
+            ],
+            "primary_role": primary_role,
+        }
         all_rejected_seed_paths.extend(rejected_seed_paths)
 
         logger.info("analyze", "started", status="running", item_id=item.id)
-        result = analyze(
-            item,
-            repo_path=repo_path,
-            agent=runtime_config.agent,
-            agent_config=agent_config,
-            debug_recorder=record_debug,
-            seed_paths=seed_paths,
-            search_hints=search_hints,
-            rejected_seed_paths=rejected_seed_paths,
-        )
-        logger.info("analyze", "done", status="done", item_id=item.id, confidence=result.confidence)
+        if preprocess_error:
+            result = AnalysisResult.from_error(item, preprocess_error, error_kind="config")
+            result.rejected_seed_paths = rejected_seed_paths
+            logger.error("analyze", "preprocess_failed", status="failed", item_id=item.id, error=preprocess_error)
+        else:
+            result = analyze(
+                item,
+                repo_path=repo_path,
+                repo_set=repo_set,
+                agent=runtime_config.agent,
+                agent_config=agent_config,
+                debug_recorder=record_debug,
+                seed_paths=seed_paths,
+                search_hints=search_hints,
+                rejected_seed_paths=rejected_seed_paths,
+                protocol_hints=protocol_hints,
+                primary_role=primary_role,
+            )
+            logger.info("analyze", "done", status="done", item_id=item.id, confidence=result.confidence)
         error_kind = _plain_value(getattr(result, "error_kind", ""), "")
         retryable = error_kind in ("parse", "parse_empty")
         if result.error and error_kind == "timeout":
@@ -395,11 +486,13 @@ def main():
                 all_rejected_seed_paths.append(rejected)
         cited_locations = getattr(result, "cited_evidence_locations", []) or []
         validation_issues = getattr(result, "evidence_validation_issues", []) or []
+        protocol_trace_validation_issues = getattr(result, "protocol_trace_validation_issues", []) or []
         evidence_location_items.append({
             "item_id": item.id,
             "seed_locations": _plain_locations(seed_locations),
             "cited_evidence_locations": _plain_locations(cited_locations),
             "evidence_validation_issues": _plain_locations(validation_issues),
+            "protocol_trace_validation_issues": _plain_locations(protocol_trace_validation_issues),
         })
         result_dict: dict = {
             "item_id": result.item_id,
@@ -412,6 +505,14 @@ def main():
         }
         requirement_source = getattr(item, "requirement_source", "zentao") or "zentao"
         result_dict["requirement_source"] = requirement_source
+        role_statuses = getattr(result, "role_evidence_statuses", []) or []
+        protocol_traces = getattr(result, "protocol_traces", []) or []
+        role_statuses = role_statuses if isinstance(role_statuses, list) else []
+        protocol_traces = protocol_traces if isinstance(protocol_traces, list) else []
+        if role_statuses:
+            result_dict["role_evidence_statuses"] = [status.to_dict() for status in role_statuses]
+        if protocol_traces:
+            result_dict["protocol_traces"] = [trace.to_dict() for trace in protocol_traces]
         if result.item_type in ("story", "requirement"):
             analysis_status = getattr(result, "analysis_status", "") or ""
             if analysis_status == "requirement_points_unavailable":
@@ -489,6 +590,7 @@ def main():
                 rejected_seed_path_count=len(result_rejected),
                 invalid_evidence_count=len(validation_issues),
                 debug_bundle=debug_bundle.path if debug_bundle.enabled and not debug_bundle.error else "",
+                repo_set=repo_set,
             )
         )
 
@@ -500,6 +602,7 @@ def main():
     debug_bundle.write_summary_path(summary_path)
     debug_bundle.write_code_evidence_locations(evidence_location_items)
     debug_bundle.write_rejected_seed_paths(all_rejected_seed_paths)
+    debug_bundle.write_normalized_clues(normalized_clues)
 
     for result_item in analysis_results:
         rps = result_item.get("requirement_points", [])

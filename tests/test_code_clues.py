@@ -8,11 +8,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from zentao_analyzer.code_clues import (
     RejectedSeedPath,
+    build_role_seed_paths,
     build_search_hints,
     build_seed_paths,
     load_clues_file,
     parse_csv_values,
 )
+from zentao_analyzer.repositories import parse_repo_args
 
 
 class TestCodeClues(unittest.TestCase):
@@ -86,6 +88,55 @@ class TestCodeClues(unittest.TestCase):
 
         self.assertEqual(paths, [])
         self.assertEqual([(item.value, item.reason) for item in rejected], [("linked.txt", "outside_repo")])
+
+    def test_load_structured_clues_file_with_repositories_items_and_protocol_hints(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = os.path.join(td, "clues.json")
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(
+                    {
+                        "repositories": {"soc": "../soc", "mcu": "../mcu"},
+                        "items": {
+                            "5939": {
+                                "primary_role": "soc",
+                                "clues": ["callback"],
+                                "protocol_hints": [{"roles": ["soc", "mcu"], "type": "cmd_id", "value": "0x1234"}],
+                                "paths": {"soc": ["src/send.c"], "mcu": ["src/recv.c"]},
+                            }
+                        },
+                    },
+                    f,
+                )
+            data = load_clues_file(path)
+        self.assertEqual(data.repositories, {"soc": "../soc", "mcu": "../mcu"})
+        self.assertEqual(data["5939"]["primary_role"], "soc")
+        self.assertEqual(data["5939"]["paths"]["soc"], ["src/send.c"])
+        self.assertEqual(data["5939"]["protocol_hints"][0]["type"], "cmd_id")
+
+    def test_build_role_seed_paths_resolves_each_role_root(self):
+        with tempfile.TemporaryDirectory() as soc, tempfile.TemporaryDirectory() as mcu:
+            os.makedirs(os.path.join(soc, "src"))
+            os.makedirs(os.path.join(mcu, "src"))
+            soc_path = os.path.join(soc, "src", "send.c")
+            mcu_path = os.path.join(mcu, "src", "recv.c")
+            for path in (soc_path, mcu_path):
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write("int x;\n")
+            repo_set = parse_repo_args([f"soc={soc}", f"mcu={mcu}"])
+            paths, rejected = build_role_seed_paths(
+                "5939",
+                repo_set=repo_set,
+                clues_by_item={"5939": {"paths": {"soc": ["src/send.c"], "mcu": ["src/recv.c"]}}},
+            )
+        self.assertEqual([(item.role, item.relative_path) for item in paths], [("soc", "src/send.c"), ("mcu", "src/recv.c")])
+        self.assertEqual(rejected, [])
+
+    def test_build_role_seed_paths_requires_role_for_multi_repo_cli_path(self):
+        with tempfile.TemporaryDirectory() as soc, tempfile.TemporaryDirectory() as mcu:
+            repo_set = parse_repo_args([f"soc={soc}", f"mcu={mcu}"])
+            paths, rejected = build_role_seed_paths("5939", repo_set=repo_set, cli_paths=["src/send.c"])
+        self.assertEqual(paths, [])
+        self.assertEqual([(item.value, item.reason) for item in rejected], [("src/send.c", "missing_role")])
 
 
 if __name__ == "__main__":

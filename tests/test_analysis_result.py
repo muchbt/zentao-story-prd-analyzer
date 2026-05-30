@@ -57,6 +57,25 @@ class TestAnalysisResult(unittest.TestCase):
         self.assertEqual(result.cited_evidence_locations[0].line_start, 12)
         self.assertEqual(result.cited_evidence_locations[0].line_end, 40)
 
+    def test_from_llm_json_preserves_role_evidence_and_protocol_trace(self):
+        item = ZentaoItem(id="6", type="bug", title="T")
+        result = AnalysisResult.from_llm_json(item, {
+            "conclusion": "已定位",
+            "evidence": [{"role": "soc", "path": "src/send.c", "line_start": 1, "line_end": 2}],
+            "role_evidence_statuses": [{"role": "soc", "status": "found", "searched_for": ["0x1234"], "explanation": "sender"}],
+            "protocol_traces": [{
+                "hint": {"roles": ["soc", "mcu"], "type": "cmd_id", "value": "0x1234"},
+                "status": "partial",
+                "role_statuses": [{"role": "soc", "status": "found"}],
+                "evidence": [{"role": "soc", "path": "src/send.c", "line_start": 1, "line_end": 2}],
+                "explanation": "only sender",
+            }],
+        })
+        self.assertEqual(result.cited_evidence_locations[0].role, "soc")
+        self.assertEqual(result.evidence[0], "soc:src/send.c:1-2")
+        self.assertEqual(result.role_evidence_statuses[0].role, "soc")
+        self.assertEqual(result.protocol_traces[0].status, "partial")
+
     def test_string_evidence_fallback_extracts_location_when_possible(self):
         item = ZentaoItem(id="7", type="bug", title="B")
         result = AnalysisResult.from_llm_json(item, {

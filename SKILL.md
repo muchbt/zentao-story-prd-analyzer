@@ -5,7 +5,7 @@ description: Use when the user wants to analyze a Zentao story, requirement, bug
 
 # Zentao Story PRD Analyzer
 
-This skill is a thin Agent CLI wrapper around the bundled analyzer CLI. It runs the analyzer from a Target Repository and produces PRD/ISSUE documents with traceable code evidence.
+This skill is a thin Agent CLI wrapper around the bundled analyzer CLI. It runs the analyzer against a Target Repository Set and produces PRD/ISSUE documents with traceable code evidence.
 
 ## When to Use
 
@@ -13,14 +13,17 @@ Use this skill to analyze Zentao `story`, `requirement`, `bug`, `ticket`, or `fe
 
 ## Terms
 
-- **Target Repository**: the repository being analyzed. Default to the Agent CLI current working directory unless the user provides a repository path.
+- **Target Repository Set**: one or more repositories analyzed together for the same item.
+- **Repository Role**: a user-provided responsibility name such as `soc`, `mcu`, `app`, or `bootloader`.
 - **Analyzer Directory**: the installed skill directory containing this `SKILL.md`, `main.py`, and `zentao_analyzer/`.
 - **Search Hint**: text passed via `--clues` or `clues_file.clues` to guide Agent repository search.
 - **Seed Path**: a repository file passed via `--paths` or `clues_file.paths`; it is preloaded as starting context. Directories are not valid Seed Paths.
+- **Protocol Hint**: a communication-protocol clue passed via `--protocol-hint` or `clues_file.items.<id>.protocol_hints`, such as a command ID, message, field, or text identifier.
+- **Structured Clue File**: a JSON file that carries repositories and item-specific clues for complex multi-repository analysis.
 
 ## Preconditions
 
-1. Run from the Target Repository, or set `--repo-path` to the explicit Target Repository path.
+1. Run from the single Target Repository, or provide `--repo`. Use repeated `--repo <role>=<path>` for multi-repository analysis.
 2. Verify the bundled analyzer is available:
 
    ```bash
@@ -46,7 +49,7 @@ Never print tokens, passwords, API keys, Authorization headers, or full login co
 ## Invocation Rules
 
 - Default to full analysis with `--analyze`.
-- Default `--repo-path` to the Target Repository current working directory.
+- Prefer `--repo`; retain `--repo-path` only for compatibility with existing single-repository calls.
 - Run the command with the Target Repository as the process working directory, while calling `<ANALYZER_DIR>/main.py` by absolute path.
 - Always set `--agent` to the host CLI when invoked as a skill.
 - Add `--quiet` when stdout should remain machine-readable JSON.
@@ -55,6 +58,8 @@ Never print tokens, passwords, API keys, Authorization headers, or full login co
 - When the user says "需求" or "requirement", use `--module requirement`. When the user says "缺陷", "Bug" or "bug", use `--module bug`. When the user says "Story" or "故事", use `--module story`. Do not map "需求" to the `story` module.
 - Do not use removed options `--keywords`, `--symbols`, `--incremental`, or `--last-commit`.
 - If providing clues, use `--clues` for Search Hints and `--paths` only for repository files.
+- For multi-repository Seed Paths, use `role=relative/path.c` or a Structured Clue File.
+- Translate explicit natural-language repository roles and communication-protocol clues into a temporary Structured Clue File when the input is complex. Ask the user before guessing hint type, repository role, or item ownership.
 
 The Agent CLI subprocess is read/search-only. It must return structured JSON to the analyzer and must not write Target Repository files, debug bundles, PRD/ISSUE documents, summaries, explicit output files, or log files. Only the analyzer process writes generated outputs.
 
@@ -99,6 +104,21 @@ python3 <ANALYZER_DIR>/main.py \
   --agent <claude|codex|opencode> \
   --clues "keyword,SymbolName,src/module" \
   --paths "src/module/entry.c" \
+  --agent-timeout 900 \
+  --quiet
+```
+
+Multi-repository analysis with a communication-protocol clue:
+
+```bash
+python3 <ANALYZER_DIR>/main.py \
+  --module requirement \
+  --id <zentao_id> \
+  --analyze \
+  --repo soc=/path/to/soc \
+  --repo mcu=/path/to/mcu \
+  --protocol-hint soc,mcu:cmd_id=0x1234 \
+  --agent <claude|codex|opencode> \
   --agent-timeout 900 \
   --quiet
 ```
@@ -152,6 +172,8 @@ When `requirement_interpretation` or `code_impact` is missing or structurally in
 
 ## Clues File
 
+Use the compact legacy form for single-repository runs:
+
 ```json
 {
   "5939": {
@@ -160,6 +182,32 @@ When `requirement_interpretation` or `code_impact` is missing or structurally in
   }
 }
 ```
+
+For multi-repository runs, use a Structured Clue File:
+
+```json
+{
+  "repositories": {
+    "soc": "../soc",
+    "mcu": "../mcu"
+  },
+  "items": {
+    "5939": {
+      "primary_role": "soc",
+      "clues": ["callback mode"],
+      "protocol_hints": [
+        {"roles": ["soc", "mcu"], "type": "cmd_id", "value": "0x1234"}
+      ],
+      "paths": {
+        "soc": ["src/send.c"],
+        "mcu": ["src/recv.c"]
+      }
+    }
+  }
+}
+```
+
+Protocol Hint types are `cmd_id`, `msg`, `field`, and `text`. They guide search and protocol-trace reporting; they are not Requirement Sources or Code Evidence.
 
 ## Failure Handling
 

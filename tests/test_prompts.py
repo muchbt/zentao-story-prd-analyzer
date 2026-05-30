@@ -6,6 +6,8 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from zentao_analyzer.prompts import build_defect_prompt, build_feature_prompt
+from zentao_analyzer.protocol_hints import normalize_protocol_hints
+from zentao_analyzer.repositories import RoleWorkspace, parse_repo_args
 from zentao_analyzer.zentao_client import ZentaoItem
 
 
@@ -94,6 +96,29 @@ class TestPrompts(unittest.TestCase):
         self.assertNotIn("requirement_interpretation", prompt)
         self.assertNotIn("code_impact", prompt)
         self.assertNotIn("requirement_points", prompt)
+
+    def test_multi_repo_prompt_includes_roles_protocol_hints_and_role_schema(self):
+        import tempfile
+
+        item = ZentaoItem(id="1", type="story", title="T", description="D", status="active")
+        with tempfile.TemporaryDirectory() as soc, tempfile.TemporaryDirectory() as mcu:
+            repo_set = parse_repo_args([f"soc={soc}", f"mcu={mcu}"])
+            hints = normalize_protocol_hints(["soc,mcu:cmd_id=0x1234"], repo_set)
+            with RoleWorkspace(repo_set) as workspace:
+                prompt = build_feature_prompt(
+                    item,
+                    repo_path=soc,
+                    repo_set=repo_set,
+                    workspace=workspace,
+                    protocol_hints=hints,
+                )
+        self.assertIn("Target Repository Set", prompt)
+        self.assertIn("soc", prompt)
+        self.assertIn("mcu", prompt)
+        self.assertIn("cmd_id=0x1234", prompt)
+        self.assertIn('"role": "Repository Role', prompt)
+        self.assertIn('"protocol_traces"', prompt)
+        self.assertIn("不能由单侧", prompt)
 
 
 if __name__ == "__main__":

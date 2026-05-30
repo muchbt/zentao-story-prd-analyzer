@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 from .zentao_client import ZentaoItem
 from .analysis_result import AnalysisResult, RequirementPoint, RPStatus, _coerce_str
 from .document_generator import DocumentResult
+from .repositories import RepositorySet
 
 
 def build_summary_item(
@@ -17,6 +18,7 @@ def build_summary_item(
     rejected_seed_path_count: int = 0,
     invalid_evidence_count: int = 0,
     debug_bundle: str = "",
+    repo_set: Optional[RepositorySet] = None,
 ) -> Dict[str, Any]:
     """为单个条目构建汇总数据结构，排除敏感信息"""
     result: Dict[str, Any] = {
@@ -86,6 +88,21 @@ def build_summary_item(
                 rp.status == RPStatus.INDETERMINATE for rp in rps
             )
             result["analysis_status"] = analysis_status
+    if repo_set is not None and repo_set.show_roles:
+        evidence_by_role: Dict[str, int] = {role: 0 for role in repo_set.roles}
+        for location in getattr(analysis, "cited_evidence_locations", []) or []:
+            role = getattr(location, "role", "") or ""
+            if role in evidence_by_role:
+                evidence_by_role[role] += 1
+        result["repositories"] = [
+            {"role": repo.role, "path": repo.path, "evidence_count": evidence_by_role[repo.role]}
+            for repo in repo_set.repositories
+        ]
+    protocol_trace_counts: Dict[str, int] = {}
+    for trace in getattr(analysis, "protocol_traces", []) or []:
+        protocol_trace_counts[trace.status] = protocol_trace_counts.get(trace.status, 0) + 1
+    if protocol_trace_counts:
+        result["protocol_trace_status_counts"] = protocol_trace_counts
     return result
 
 

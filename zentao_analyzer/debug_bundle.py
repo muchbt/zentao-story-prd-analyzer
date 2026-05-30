@@ -114,6 +114,12 @@ class DebugBundle:
     def write_rejected_seed_paths(self, rejected_seed_paths: List[Any]) -> None:
         self._write_json("rejected_seed_paths.json", rejected_seed_paths)
 
+    def write_repositories(self, repositories: Any) -> None:
+        self._write_json("repositories.json", repositories)
+
+    def write_normalized_clues(self, clues: Any) -> None:
+        self._write_json("normalized_clues.json", clues)
+
     def write_requirement_points(self, item_id: str, rps: Any) -> None:
         if not self.enabled:
             return

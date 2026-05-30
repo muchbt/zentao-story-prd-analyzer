@@ -229,14 +229,14 @@ def _render_unified_code_table(analysis: AnalysisResult) -> str:
     impact_map: dict = {}
     for loc in impact_locs:
         if loc.path and loc.line_start > 0 and loc.line_end > 0:
-            key = (loc.path, loc.line_start, loc.line_end)
+            key = (getattr(loc, "role", "") or "", loc.path, loc.line_start, loc.line_end)
             impact_map[key] = (loc.component or "", loc.symbol or "", loc.reason or "")
 
     evidence_map: dict = {}
     for rp in rps:
         for ev in rp.evidence:
             if ev.path and ev.line_start > 0 and ev.line_end > 0:
-                key = (ev.path, ev.line_start, ev.line_end)
+                key = (getattr(ev, "role", "") or "", ev.path, ev.line_start, ev.line_end)
                 if key not in evidence_map:
                     evidence_map[key] = {}
                 evidence_map[key][rp.id] = (ev.symbol or "", ev.reason or "")
@@ -245,7 +245,7 @@ def _render_unified_code_table(analysis: AnalysisResult) -> str:
     cited_fallback: dict = {}
     for loc in cited_locs:
         if loc.path and loc.line_start > 0 and loc.line_end > 0:
-            key = (loc.path, loc.line_start, loc.line_end)
+            key = (getattr(loc, "role", "") or "", loc.path, loc.line_start, loc.line_end)
             if key not in evidence_map:
                 evidence_map[key] = {}
             cited_fallback[key] = (loc.symbol or "", loc.reason or "")
@@ -268,7 +268,7 @@ def _render_unified_code_table(analysis: AnalysisResult) -> str:
         return text[:limit] + "…"
 
     for key in sorted(all_keys):
-        path, line_start, line_end = key
+        role, path, line_start, line_end = key
         component, impact_symbol, impact_reason = impact_map.get(key, ("", "", ""))
         rp_entries = evidence_map.get(key, {})
         all_rp_ids = sorted(rp_entries.keys())
@@ -305,7 +305,7 @@ def _render_unified_code_table(analysis: AnalysisResult) -> str:
 
         line_range = f"{line_start}-{line_end}"
         rows.append(
-            f"| {component} | {path} | {line_range} | {symbol} | {impact_text} | {evidence_text} |"
+            f"| {component} | {_role_path(role, path)} | {line_range} | {symbol} | {impact_text} | {evidence_text} |"
         )
 
     return "\n".join(rows)
@@ -367,7 +367,7 @@ def _render_key_evidence_table(analysis: AnalysisResult) -> str:
         line_range = f"{location.line_start}-{location.line_end}"
         rows.append(
             "| {path} | {line_range} | {symbol} | {reason} |".format(
-                path=location.path,
+                path=_role_path(getattr(location, "role", "") or "", location.path),
                 line_range=line_range,
                 symbol=location.symbol or "",
                 reason=location.reason or "",
@@ -384,7 +384,7 @@ def _render_supplemental_evidence(analysis: AnalysisResult) -> str:
     represented = {
         " ".join(
             part for part in (
-                f"{loc.path}:{loc.line_start}-{loc.line_end}",
+                f"{_role_path(getattr(loc, 'role', '') or '', loc.path)}:{loc.line_start}-{loc.line_end}",
                 loc.symbol or "",
                 loc.reason or "",
             ) if part
@@ -396,6 +396,42 @@ def _render_supplemental_evidence(analysis: AnalysisResult) -> str:
         return ""
     notes = "\n".join(f"- {item}" for item in supplemental)
     return f"补充说明：\n\n{notes}"
+
+
+def _role_path(role: str, path: str) -> str:
+    return f"{role}:{path}" if role else path
+
+
+def _render_protocol_traces(analysis: AnalysisResult) -> str:
+    traces = getattr(analysis, "protocol_traces", []) or []
+    if not traces:
+        return "未提供通信协议线索。"
+    rows = ["| 类型 | 值 | 角色范围 | 闭环状态 | 说明 |", "|---|---|---|---|---|"]
+    for trace in traces:
+        rows.append(
+            f"| {trace.hint_type} | {trace.value} | {', '.join(trace.roles)} | {trace.status} | {trace.explanation or '—'} |"
+        )
+    return "\n".join(rows)
+
+
+def _render_prd_protocol_section(analysis: AnalysisResult) -> str:
+    if not (getattr(analysis, "protocol_traces", []) or []):
+        return ""
+    return f"""### 3.3 协议线索闭环
+
+{_render_protocol_traces(analysis)}
+
+"""
+
+
+def _render_issue_protocol_section(analysis: AnalysisResult) -> str:
+    if not (getattr(analysis, "protocol_traces", []) or []):
+        return ""
+    return f"""## 协议线索闭环
+
+{_render_protocol_traces(analysis)}
+
+"""
 
 
 def validate_document_consistency(analysis: AnalysisResult, document: DocumentResult):
@@ -489,6 +525,8 @@ def _render_prd(item: ZentaoItem, analysis: AnalysisResult, generated_at: str, d
     impact_notes = _render_code_impact_notes(analysis)
     supplemental = _render_supplemental_evidence(analysis)
     ratio_line = _render_completion_ratio(analysis)
+    protocol_section = _render_prd_protocol_section(analysis)
+    completion_section = "3.4" if protocol_section else "3.3"
 
     return f"""# PRD: {item.title}
 
@@ -542,7 +580,7 @@ def _render_prd(item: ZentaoItem, analysis: AnalysisResult, generated_at: str, d
 
 {impact_notes}
 
-### 3.3 实现完成度
+{protocol_section}### {completion_section} 实现完成度
 
 - **结论**：{analysis.conclusion or "未判断"}
 - **优先级**：{analysis.priority or "未评估"}
@@ -619,6 +657,7 @@ def _render_issue(item: ZentaoItem, analysis: AnalysisResult, generated_at: str,
 
 {_render_key_evidence_table(analysis)}
 
+{_render_issue_protocol_section(analysis)}
 ## 可能根因
 
 {suspected}

@@ -1,7 +1,7 @@
 import dataclasses
 from typing import Any, Dict, List, Optional
 
-from .code_clues import RejectedSeedPath
+from .code_clues import RejectedSeedPath, RoleSeedPath
 
 
 @dataclasses.dataclass
@@ -10,6 +10,7 @@ class SeedLocation:
     line_start: int
     line_end: int
     source: str = "seed"
+    role: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return dataclasses.asdict(self)
@@ -37,7 +38,15 @@ def load_seed_context(
     token_ratio = 4
     truncated = False
 
-    for path in list(seed_paths or [])[:max_seed_files]:
+    for seed_path in list(seed_paths or [])[:max_seed_files]:
+        if isinstance(seed_path, RoleSeedPath):
+            path = seed_path.path
+            display_path = f"{seed_path.role}:{seed_path.relative_path}"
+            role = seed_path.role
+        else:
+            path = seed_path
+            display_path = path
+            role = ""
         try:
             with open(path, "r", encoding="utf-8", errors="ignore") as f:
                 lines = f.readlines()
@@ -61,12 +70,12 @@ def load_seed_context(
         token_budget -= estimated_tokens
         line_end = len(content_lines)
         snippets.append({
-            "path": path,
+            "path": display_path,
             "content": content,
             "line_start": 1,
             "line_end": line_end,
         })
-        locations.append(SeedLocation(path=path, line_start=1, line_end=line_end))
+        locations.append(SeedLocation(path=display_path, line_start=1, line_end=line_end, role=role))
         if token_budget <= 0:
             truncated = True
             break

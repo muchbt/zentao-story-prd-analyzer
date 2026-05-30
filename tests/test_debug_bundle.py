@@ -97,6 +97,16 @@ class TestDebugBundle(unittest.TestCase):
                 rejected = json.load(f)
             self.assertEqual(rejected[0]["reason"], "outside_repo")
 
+    def test_normalized_clues_and_repositories_are_written(self):
+        with tempfile.TemporaryDirectory() as td:
+            bundle = DebugBundle(enabled=True, path=os.path.join(td, "bundle"))
+            bundle.write_repositories({"repositories": [{"role": "soc", "path": "/repo/soc"}]})
+            bundle.write_normalized_clues({"items": {"1": {"protocol_hints": [{"type": "cmd_id", "value": "0x1234"}]}}})
+            with open(os.path.join(bundle.path, "repositories.json"), encoding="utf-8") as f:
+                self.assertEqual(json.load(f)["repositories"][0]["role"], "soc")
+            with open(os.path.join(bundle.path, "normalized_clues.json"), encoding="utf-8") as f:
+                self.assertEqual(json.load(f)["items"]["1"]["protocol_hints"][0]["value"], "0x1234")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

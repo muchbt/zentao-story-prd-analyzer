@@ -1,10 +1,14 @@
-from typing import List, Optional
+import os
+from typing import Any, List, Optional
 
+from .protocol_hints import ProtocolHint
+from .repositories import RepositorySet
 from .zentao_client import ZentaoItem
 
 
 _DEFECT_EVIDENCE_SCHEMA = '''  "evidence": [
     {
+      "role": "Repository Role，多仓必填，单仓可省略",
       "path": "文件路径",
       "line_start": 1,
       "line_end": 20,
@@ -19,10 +23,13 @@ _DEFECT_EVIDENCE_SCHEMA = '''  "evidence": [
   "verification": ["验证建议1", "..."],
   "priority": "高|中|低",
   "confidence": "高|中|低",
-  "understanding_summary": "用自然语言概述你对禅道条目需求或问题的理解，不要重复证据、缺口、建议或验证步骤"'''
+  "understanding_summary": "用自然语言概述你对禅道条目需求或问题的理解，不要重复证据、缺口、建议或验证步骤",
+  "role_evidence_statuses": [],
+  "protocol_traces": []'''
 
 
 _FEATURE_RP_EVIDENCE_SCHEMA = '''          {
+            "role": "Repository Role，多仓必填，单仓可省略",
             "path": "文件路径",
             "line_start": 1,
             "line_end": 20,
@@ -71,6 +78,7 @@ _CODE_IMPACT_SCHEMA = '''  "code_impact": {
     "related_locations": [
       {
         "component": "模块名称",
+        "role": "Repository Role，多仓必填，单仓可省略",
         "path": "文件路径",
         "line_start": 1,
         "line_end": 20,
@@ -92,13 +100,16 @@ ID: {id}
 来源: {requirement_source}
 
 【代码仓库】
-路径: {repo_path}
+{repository_context}
 
 【种子上下文】
 {seed_context}
 
 【搜索建议】
 {search_hints}
+
+【通信协议线索】
+{protocol_hints}
 
 【权限与写入边界】
 - 只允许读取和搜索代码仓库。
@@ -130,18 +141,20 @@ ID: {id}
 15. evidence 必须引用仓库中实际存在的文件和行号，禁止编造。
 16. 每条 evidence 的 reason 必须说明该证据如何支持此需求点的结论。
 17. code_impact.related_locations 与 requirement_points.evidence 是独立的：related_locations 只说明需求与代码的关联，不作为完成度证据。
+18. 多仓模式下每条证据必须包含 Repository Role；跨 Repository Role 的完成度不能由单侧 Code Evidence 单独确认。
+19. Protocol Hint 只用于指导通信协议搜索，不能新增需求点，也不能直接作为 Code Evidence。
 
 【需求解读约束】
-18. requirement_interpretation 的每个字段都应基于 Requirement Source（原始需求正文）整理。
-19. source 枚举值为 requirement（来自需求正文）、code_context（来自代码侧候选上下文）、insufficient（原文信息不足）。
-20. source 为 code_context 的内容仅表明仓库中存在相关命名或模块，不构成需求定义或完成度证据。
-21. source 为 insufficient 时不可编造内容，该字段展示"原始需求未提供足够信息"。
-22. 章节内容不足时，必须以 source: "insufficient" 标明，不能为了填满模板补造事实。
+20. requirement_interpretation 的每个字段都应基于 Requirement Source（原始需求正文）整理。
+21. source 枚举值为 requirement（来自需求正文）、code_context（来自代码侧候选上下文）、insufficient（原文信息不足）。
+22. source 为 code_context 的内容仅表明仓库中存在相关命名或模块，不构成需求定义或完成度证据。
+23. source 为 insufficient 时不可编造内容，该字段展示"原始需求未提供足够信息"。
+24. 章节内容不足时，必须以 source: "insufficient" 标明，不能为了填满模板补造事实。
 
 【其他字段】
-23. understanding_summary 只概述你对需求本身的理解，不要重复需求点判定、证据、缺口或建议。
-24. priority 和 verification 分别为整体优先级和验证建议。
-25. recommendations 为建议性内容，可包含新模块、新接口或测试策略建议，但必须明确标记为建议，不得描述为已有实现。
+25. understanding_summary 只概述你对需求本身的理解，不要重复需求点判定、证据、缺口或建议。
+26. priority 和 verification 分别为整体优先级和验证建议。
+27. recommendations 为建议性内容，可包含新模块、新接口或测试策略建议，但必须明确标记为建议，不得描述为已有实现。
 
 【JSON Schema】
 {{
@@ -159,6 +172,7 @@ ID: {id}
     "related_locations": [
       {{
         "component": "模块名称",
+        "role": "Repository Role，多仓必填，单仓可省略",
         "path": "文件路径",
         "line_start": 1,
         "line_end": 20,
@@ -182,7 +196,19 @@ ID: {id}
   "understanding_summary": "自然语言概述对需求本身的理解",
   "priority": "高|中|低",
   "recommendations": ["修改建议1", "..."],
-  "verification": ["验证建议1", "..."]
+  "verification": ["验证建议1", "..."],
+  "role_evidence_statuses": [
+    {{"role": "Repository Role", "status": "found|not_found|ambiguous|not_searched", "searched_for": ["搜索词"], "explanation": "命中或未命中说明"}}
+  ],
+  "protocol_traces": [
+    {{
+      "hint": {{"roles": ["soc", "mcu"], "type": "cmd_id|msg|field|text", "value": "协议线索"}},
+      "status": "closed_loop|partial|not_found|ambiguous",
+      "role_statuses": [{{"role": "soc", "status": "found|not_found|ambiguous|not_searched", "searched_for": ["搜索词"], "explanation": "说明"}}],
+      "evidence": [{{"role": "soc", "path": "文件路径", "line_start": 1, "line_end": 20, "symbol": "符号", "reason": "协议关联说明"}}],
+      "explanation": "跨角色协议关联说明"
+    }}
+  ]
 }}
 """
 
@@ -196,13 +222,16 @@ ID: {id}
 状态: {status}
 
 【代码仓库】
-路径: {repo_path}
+{repository_context}
 
 【种子上下文】
 {seed_context}
 
 【搜索建议】
 {search_hints}
+
+【通信协议线索】
+{protocol_hints}
 
 【权限与写入边界】
 - 只允许读取和搜索代码仓库。
@@ -220,7 +249,8 @@ ID: {id}
 7. 如果代码仓库不足以分析，请设置 conclusion="无法定位"、confidence="低"，在 suspected_causes 中说明"相关代码证据不足"。
 8. confidence="高" 意味着有直接代码证据支持；confidence="中" 意味着有间接证据或推断；confidence="低" 意味着证据不足。
 9. understanding_summary 只概述你对缺陷或反馈本身的理解，不要复制 conclusion、evidence、suspected_causes、recommendations 或 verification。
-10. JSON Schema:
+10. 多仓模式下每条 evidence 必须包含 Repository Role；Protocol Hint 只指导搜索，不是证据。
+11. JSON Schema:
 {{
   "conclusion": "已定位|部分定位|无法定位",
 {defect_evidence_schema}
@@ -246,7 +276,34 @@ def _format_search_hints(search_hints: Optional[List[str]]) -> str:
     return ", ".join(str(item) for item in search_hints if str(item).strip())
 
 
-def build_feature_prompt(item: ZentaoItem, repo_path: str, seed_snippets=None, search_hints=None) -> str:
+def _format_repository_context(repo_path: str, repo_set: Optional[RepositorySet], workspace: Any = None, primary_role: str = "") -> str:
+    if not repo_set or not repo_set.show_roles:
+        return f"路径: {repo_path}"
+    lines = ["Target Repository Set:"]
+    for repo in repo_set.repositories:
+        search_path = os.path.join(workspace.path, repo.role) if workspace and workspace.available else repo.path
+        lines.append(f"- {repo.role}: 搜索路径 {search_path}；原始路径 {repo.path}")
+    if primary_role:
+        lines.append(f"- Primary Repository Role: {primary_role}（仅影响搜索与展示优先级）")
+    return "\n".join(lines)
+
+
+def _format_protocol_hints(protocol_hints: Optional[List[ProtocolHint]]) -> str:
+    if not protocol_hints:
+        return "[未提供通信协议线索]"
+    return "\n".join(f"- roles={','.join(hint.roles)}; {hint.type}={hint.value}" for hint in protocol_hints)
+
+
+def build_feature_prompt(
+    item: ZentaoItem,
+    repo_path: str,
+    seed_snippets=None,
+    search_hints=None,
+    repo_set: Optional[RepositorySet] = None,
+    workspace: Any = None,
+    protocol_hints: Optional[List[ProtocolHint]] = None,
+    primary_role: str = "",
+) -> str:
     return _FEATURE_TEMPLATE.format(
         id=item.id,
         title=item.title,
@@ -254,9 +311,10 @@ def build_feature_prompt(item: ZentaoItem, repo_path: str, seed_snippets=None, s
         type=item.type,
         status=item.status,
         requirement_source=getattr(item, "requirement_source", "zentao") or "zentao",
-        repo_path=repo_path,
+        repository_context=_format_repository_context(repo_path, repo_set, workspace, primary_role),
         seed_context=_format_seed_context(seed_snippets or []),
         search_hints=_format_search_hints(search_hints),
+        protocol_hints=_format_protocol_hints(protocol_hints),
         rp_evidence_schema=_FEATURE_RP_EVIDENCE_SCHEMA,
         source_schema=_SOURCE_SCHEMA.strip(),
         interpretation_schema=_INTERPRETATION_SCHEMA.strip(),
@@ -264,15 +322,25 @@ def build_feature_prompt(item: ZentaoItem, repo_path: str, seed_snippets=None, s
     )
 
 
-def build_defect_prompt(item: ZentaoItem, repo_path: str, seed_snippets=None, search_hints=None) -> str:
+def build_defect_prompt(
+    item: ZentaoItem,
+    repo_path: str,
+    seed_snippets=None,
+    search_hints=None,
+    repo_set: Optional[RepositorySet] = None,
+    workspace: Any = None,
+    protocol_hints: Optional[List[ProtocolHint]] = None,
+    primary_role: str = "",
+) -> str:
     return _DEFECT_TEMPLATE.format(
         id=item.id,
         title=item.title,
         description=item.description,
         type=item.type,
         status=item.status,
-        repo_path=repo_path,
+        repository_context=_format_repository_context(repo_path, repo_set, workspace, primary_role),
         seed_context=_format_seed_context(seed_snippets or []),
         search_hints=_format_search_hints(search_hints),
+        protocol_hints=_format_protocol_hints(protocol_hints),
         defect_evidence_schema=_DEFECT_EVIDENCE_SCHEMA,
     )

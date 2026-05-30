@@ -13,7 +13,10 @@ inputs:
     type: string
     default: open
   - name: repo_path
-    description: 本地代码仓库路径
+    description: 兼容入口：单一本地代码仓库路径
+    type: string
+  - name: repo
+    description: 代码仓库；单仓传 path，多仓重复传 role=path
     type: string
   - name: agent
     description: Agent CLI 类型（codex、claude、opencode）
@@ -72,6 +75,9 @@ inputs:
     type: string
   - name: clues_file
     description: 按禅道条目 ID 提供代码线索的 JSON 文件
+    type: string
+  - name: protocol_hint
+    description: 通信协议线索，可重复；格式 [role1,role2:]type=value 或文本
     type: string
 outputs:
   - name: prd_docs

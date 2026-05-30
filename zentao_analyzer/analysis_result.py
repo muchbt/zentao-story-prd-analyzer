@@ -6,6 +6,9 @@ from .zentao_client import ZentaoItem
 
 
 VALID_SOURCE_ENUM = {"requirement", "code_context", "insufficient"}
+VALID_ROLE_EVIDENCE_STATUSES = {"found", "not_found", "ambiguous", "not_searched"}
+VALID_PROTOCOL_TRACE_STATUSES = {"closed_loop", "partial", "not_found", "ambiguous"}
+VALID_PROTOCOL_HINT_TYPES = {"cmd_id", "msg", "field", "text"}
 
 
 @dataclasses.dataclass
@@ -115,6 +118,7 @@ class CodeImpactLocation:
     line_end: int = 0
     symbol: str = ""
     reason: str = ""
+    role: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -124,6 +128,7 @@ class CodeImpactLocation:
             "line_end": self.line_end,
             "symbol": self.symbol,
             "reason": self.reason,
+            "role": self.role,
         }
 
 
@@ -147,6 +152,7 @@ class EvidenceLocation:
     symbol: str = ""
     reason: str = ""
     source: str = ""
+    role: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return dataclasses.asdict(self)
@@ -159,6 +165,38 @@ class EvidenceValidationIssue:
     line_end: int = 0
     reason: str = ""
     requirement_point_ids: List[str] = dataclasses.field(default_factory=list)
+    role: str = ""
+
+
+@dataclasses.dataclass
+class RoleEvidenceStatus:
+    role: str
+    status: str
+    searched_for: List[str] = dataclasses.field(default_factory=list)
+    explanation: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return dataclasses.asdict(self)
+
+
+@dataclasses.dataclass
+class ProtocolTrace:
+    roles: List[str]
+    hint_type: str
+    value: str
+    status: str
+    role_statuses: List[RoleEvidenceStatus] = dataclasses.field(default_factory=list)
+    evidence: List[EvidenceLocation] = dataclasses.field(default_factory=list)
+    explanation: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "hint": {"roles": self.roles, "type": self.hint_type, "value": self.value},
+            "status": self.status,
+            "role_statuses": [status.to_dict() for status in self.role_statuses],
+            "evidence": [location.to_dict() for location in self.evidence],
+            "explanation": self.explanation,
+        }
 
 
 class RPStatus:
@@ -341,7 +379,7 @@ def aggregate_evidence_from_rps(rps: List[RequirementPoint]) -> List[EvidenceLoc
     result: List[EvidenceLocation] = []
     for rp in rps:
         for loc in rp.evidence:
-            key = (loc.path, loc.line_start, loc.line_end, loc.symbol)
+            key = (loc.role, loc.path, loc.line_start, loc.line_end, loc.symbol)
             if key not in seen_keys:
                 seen_keys.add(key)
                 result.append(loc)
@@ -352,7 +390,8 @@ def aggregate_evidence_text_from_rps(rps: List[RequirementPoint]) -> List[str]:
     locations = aggregate_evidence_from_rps(rps)
     evidence_text: List[str] = []
     for loc in locations:
-        text_parts = [f"{loc.path}:{loc.line_start}-{loc.line_end}"]
+        role_prefix = f"{loc.role}:" if loc.role else ""
+        text_parts = [f"{role_prefix}{loc.path}:{loc.line_start}-{loc.line_end}"]
         if loc.symbol:
             text_parts.append(loc.symbol)
         if loc.reason:
@@ -389,14 +428,14 @@ def correct_invalidated_rps(
         if issues:
             invalid_rp_ids.add(rp_id)
         for issue in issues:
-            key = (issue.path, issue.line_start, issue.line_end, issue.reason)
+            key = (issue.role, issue.path, issue.line_start, issue.line_end, issue.reason)
             if key not in seen_issue_keys:
                 seen_issue_keys.add(key)
                 all_unique_issues.append(issue)
             else:
                 existing = next(
                     existing_issue for existing_issue in all_unique_issues
-                    if (existing_issue.path, existing_issue.line_start, existing_issue.line_end, existing_issue.reason) == key
+                    if (existing_issue.role, existing_issue.path, existing_issue.line_start, existing_issue.line_end, existing_issue.reason) == key
                 )
                 for point_id in issue.requirement_point_ids:
                     if point_id not in existing.requirement_point_ids:
@@ -604,6 +643,7 @@ def _parse_code_impact_location(item: Any) -> Optional[CodeImpactLocation]:
         line_end=line_end,
         symbol=_coerce_str(item.get("symbol", "")),
         reason=_coerce_str(item.get("reason", "")),
+        role=_coerce_str(item.get("role", "")),
     )
 
 
@@ -646,16 +686,19 @@ def _invalid_evidence_issue(value: Any, rp_id: str) -> EvidenceValidationIssue:
         path = _coerce_str(value.get("path", ""))
         line_start = _safe_int(value.get("line_start"))
         line_end = _safe_int(value.get("line_end"), line_start)
+        role = _coerce_str(value.get("role", ""))
     else:
         path = ""
         line_start = 0
         line_end = 0
+        role = ""
     return EvidenceValidationIssue(
         path=path,
         line_start=line_start,
         line_end=line_end,
         reason="invalid_evidence_object",
         requirement_point_ids=[rp_id],
+        role=role,
     )
 
 
@@ -694,6 +737,7 @@ def _coerce_str(value: Any) -> str:
 
 
 def _format_evidence_object(data: Dict[str, Any]) -> str:
+    role = str(data.get("role", "")).strip()
     path = str(data.get("path", "")).strip()
     line_start = _safe_int(data.get("line_start"))
     line_end = _safe_int(data.get("line_end"), line_start)
@@ -701,7 +745,8 @@ def _format_evidence_object(data: Dict[str, Any]) -> str:
     reason = str(data.get("reason", "")).strip()
     location = path
     if path and line_start > 0 and line_end > 0:
-        location = f"{path}:{line_start}-{line_end}"
+        role_prefix = f"{role}:" if role else ""
+        location = f"{role_prefix}{path}:{line_start}-{line_end}"
     parts = [location]
     if symbol:
         parts.append(symbol)
@@ -723,11 +768,12 @@ def _location_from_evidence_object(data: Dict[str, Any]) -> EvidenceLocation:
         symbol=str(data.get("symbol", "")).strip(),
         reason=str(data.get("reason", "")).strip(),
         source="agent",
+        role=str(data.get("role", "")).strip(),
     )
 
 
 def _location_from_evidence_text(text: str) -> EvidenceLocation:
-    match = re.search(r"(?P<path>[\w./\\-]+\.[A-Za-z0-9_]+):(?P<start>\d+)(?:-(?P<end>\d+))?", text)
+    match = re.search(r"(?:(?P<role>[A-Za-z0-9_-]+):)?(?P<path>[\w./\\-]+\.[A-Za-z0-9_]+):(?P<start>\d+)(?:-(?P<end>\d+))?", text)
     if not match:
         return None
     start = _safe_int(match.group("start"))
@@ -740,6 +786,7 @@ def _location_from_evidence_text(text: str) -> EvidenceLocation:
         line_end=end,
         source="fallback",
         reason=text,
+        role=match.group("role") or "",
     )
 
 
@@ -763,6 +810,55 @@ def parse_evidence(evidence: Any):
             if location:
                 cited_locations.append(location)
     return evidence_text, cited_locations
+
+
+def parse_role_evidence_statuses(data: Any) -> List[RoleEvidenceStatus]:
+    if not isinstance(data, list):
+        return []
+    result: List[RoleEvidenceStatus] = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        role = _coerce_str(item.get("role", ""))
+        status = _coerce_str(item.get("status", ""))
+        if not role or status not in VALID_ROLE_EVIDENCE_STATUSES:
+            continue
+        result.append(RoleEvidenceStatus(
+            role=role,
+            status=status,
+            searched_for=_coerce_str_list(item.get("searched_for", [])),
+            explanation=_coerce_str(item.get("explanation", "")),
+        ))
+    return result
+
+
+def parse_protocol_traces(data: Any) -> List[ProtocolTrace]:
+    if not isinstance(data, list):
+        return []
+    result: List[ProtocolTrace] = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        hint = item.get("hint", {})
+        if not isinstance(hint, dict):
+            continue
+        roles = _coerce_str_list(hint.get("roles", []))
+        hint_type = _coerce_str(hint.get("type", ""))
+        value = _coerce_str(hint.get("value", ""))
+        status = _coerce_str(item.get("status", ""))
+        if not roles or hint_type not in VALID_PROTOCOL_HINT_TYPES or not value or status not in VALID_PROTOCOL_TRACE_STATUSES:
+            continue
+        _, evidence = parse_evidence(item.get("evidence", []))
+        result.append(ProtocolTrace(
+            roles=roles,
+            hint_type=hint_type,
+            value=value,
+            status=status,
+            role_statuses=parse_role_evidence_statuses(item.get("role_statuses", [])),
+            evidence=evidence,
+            explanation=_coerce_str(item.get("explanation", "")),
+        ))
+    return result
 
 
 @dataclasses.dataclass
@@ -797,6 +893,9 @@ class AnalysisResult:
     code_impact: Optional[CodeImpactAnalysis] = None
     rich_content_issues: List[str] = dataclasses.field(default_factory=list)
     code_impact_validation_issues: List[EvidenceValidationIssue] = dataclasses.field(default_factory=list)
+    role_evidence_statuses: List[RoleEvidenceStatus] = dataclasses.field(default_factory=list)
+    protocol_traces: List[ProtocolTrace] = dataclasses.field(default_factory=list)
+    protocol_trace_validation_issues: List[EvidenceValidationIssue] = dataclasses.field(default_factory=list)
 
     @classmethod
     def from_llm_json(cls, item: ZentaoItem, data: Dict[str, Any], raw_response: str = "") -> "AnalysisResult":
@@ -820,6 +919,8 @@ class AnalysisResult:
             raw_response=raw_response,
             evidence_text=evidence_text,
             cited_evidence_locations=cited_locations,
+            role_evidence_statuses=parse_role_evidence_statuses(data.get("role_evidence_statuses", [])),
+            protocol_traces=parse_protocol_traces(data.get("protocol_traces", [])),
         )
 
     @classmethod
