@@ -227,6 +227,43 @@ def _safe_join_error(stdout: str, stderr: str) -> str:
     return redact_sensitive(text.strip())
 
 
+def _parse_opencode_events(stdout: str):
+    """Parse OpenCode NDJSON event stream.
+
+    Returns (text_content, error_message, is_event_stream).
+    - is_event_stream: True if at least one line is a JSON object with a ``type`` field.
+    """
+    text_parts = []
+    error_messages = []
+    is_event_stream = False
+    for line in stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(event, dict) or "type" not in event:
+            continue
+        is_event_stream = True
+        event_type = event.get("type", "")
+        if event_type == "text":
+            part = event.get("part") or {}
+            text = part.get("text", "")
+            if text:
+                text_parts.append(str(text))
+        elif event_type == "error":
+            err = event.get("error") or {}
+            err_data = err.get("data") or {}
+            msg = err_data.get("message") or err.get("message", "")
+            if msg:
+                error_messages.append(str(msg))
+    text_content = "".join(text_parts)
+    error_message = "\n".join(error_messages)
+    return text_content, error_message, is_event_stream
+
+
 class AgentClient:
     def __init__(self, config: AgentConfig):
         self.config = config
@@ -411,7 +448,8 @@ class AgentClient:
     def _call_opencode(self, prompt: str) -> AgentResult:
         started = _now_ms()
         command = self.config.command or "opencode"
-        args = [command, "run"]
+        cwd = self.config.cwd or "."
+        args = [command, "run", "--format", "json", "--dir", cwd]
         if self.config.model:
             args.extend(["--model", self.config.model])
         args.extend(list(self.config.extra_args or []))
@@ -423,7 +461,7 @@ class AgentClient:
                 capture_output=True,
                 text=True,
                 timeout=self.config.timeout,
-                cwd=self.config.cwd or ".",
+                cwd=cwd,
                 shell=False,
             )
         except FileNotFoundError as exc:
@@ -436,6 +474,17 @@ class AgentClient:
         stdout = completed.stdout or ""
         stderr = completed.stderr or ""
         if completed.returncode != 0:
+            text_content, error_message, is_event_stream = _parse_opencode_events(stdout)
+            if is_event_stream and error_message:
+                return AgentResult(
+                    ok=False,
+                    raw_response=redact_sensitive(stdout),
+                    error=redact_sensitive(error_message),
+                    error_kind="runtime",
+                    duration_ms=_now_ms() - started,
+                    agent="opencode",
+                    model=self.config.model,
+                )
             error_text = _safe_join_error(stdout, stderr)
             return AgentResult(
                 ok=False,
@@ -446,4 +495,29 @@ class AgentClient:
                 agent="opencode",
                 model=self.config.model,
             )
+
+        text_content, error_message, is_event_stream = _parse_opencode_events(stdout)
+        if is_event_stream:
+            if error_message:
+                return AgentResult(
+                    ok=False,
+                    raw_response=redact_sensitive(stdout),
+                    error=redact_sensitive(error_message),
+                    error_kind="runtime",
+                    duration_ms=_now_ms() - started,
+                    agent="opencode",
+                    model=self.config.model,
+                )
+            if not text_content:
+                return AgentResult(
+                    ok=False,
+                    raw_response=redact_sensitive(stdout),
+                    error="OpenCode 事件流中未找到文本输出",
+                    error_kind="parse_empty",
+                    duration_ms=_now_ms() - started,
+                    agent="opencode",
+                    model=self.config.model,
+                )
+            return self._parse_text(text_content.strip(), raw_agent="opencode", model=self.config.model, duration_ms=_now_ms() - started)
+
         return self._parse_text(stdout.strip(), raw_agent="opencode", model=self.config.model, duration_ms=_now_ms() - started)

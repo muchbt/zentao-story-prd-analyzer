@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from zentao_analyzer.agent_client import AgentClient, AgentConfig, extract_json_object, _extract_markdown_json, _repair_json_quotes
+from zentao_analyzer.agent_client import AgentClient, AgentConfig, extract_json_object, _extract_markdown_json, _repair_json_quotes, _parse_opencode_events
 
 
 class TestAgentClientCore(unittest.TestCase):
@@ -203,18 +203,184 @@ class TestAgentClientCodex(unittest.TestCase):
         self.assertEqual(result.json_data["conclusion"], "完成")
 
 
+class TestOpenCodeEventParsing(unittest.TestCase):
+    def test_single_text_event(self):
+        events = '{"type":"text","part":{"text":"Hello world"}}'
+        text, error, is_stream = _parse_opencode_events(events)
+        self.assertTrue(is_stream)
+        self.assertEqual(text, "Hello world")
+        self.assertEqual(error, "")
+
+    def test_multiple_text_events_concatenated(self):
+        events = '\n'.join([
+            '{"type":"text","part":{"text":"Part 1"}}',
+            '{"type":"text","part":{"text":"Part 2"}}',
+        ])
+        text, error, is_stream = _parse_opencode_events(events)
+        self.assertTrue(is_stream)
+        self.assertEqual(text, "Part 1Part 2")
+        self.assertEqual(error, "")
+
+    def test_error_event_detected(self):
+        events = '{"type":"error","error":{"data":{"message":"something went wrong"}}}'
+        text, error, is_stream = _parse_opencode_events(events)
+        self.assertTrue(is_stream)
+        self.assertEqual(text, "")
+        self.assertIn("something went wrong", error)
+
+    def test_error_event_flat_message(self):
+        events = '{"type":"error","error":{"message":"flat error"}}'
+        text, error, is_stream = _parse_opencode_events(events)
+        self.assertTrue(is_stream)
+        self.assertEqual(text, "")
+        self.assertEqual(error, "flat error")
+
+    def test_mixed_events_skip_non_text(self):
+        events = '\n'.join([
+            '{"type":"step_start","step":{"name":"search"}}',
+            '{"type":"text","part":{"text":"analysis result"}}',
+            '{"type":"step_finish","step":{"name":"search"}}',
+            '{"type":"tool_use","tool":{"name":"Read"}}',
+            '{"type":"reasoning","content":"thinking..."}',
+        ])
+        text, error, is_stream = _parse_opencode_events(events)
+        self.assertTrue(is_stream)
+        self.assertEqual(text, "analysis result")
+        self.assertEqual(error, "")
+
+    def test_empty_output_not_event_stream(self):
+        text, error, is_stream = _parse_opencode_events("")
+        self.assertFalse(is_stream)
+        self.assertEqual(text, "")
+        self.assertEqual(error, "")
+
+    def test_plain_text_not_event_stream(self):
+        text, error, is_stream = _parse_opencode_events("just some plain text output")
+        self.assertFalse(is_stream)
+        self.assertEqual(text, "")
+        self.assertEqual(error, "")
+
+    def test_non_json_lines_skipped(self):
+        events = '\n'.join([
+            "some garbage line",
+            '{"type":"text","part":{"text":"valid"}}',
+            "",
+            "more garbage",
+        ])
+        text, error, is_stream = _parse_opencode_events(events)
+        self.assertTrue(is_stream)
+        self.assertEqual(text, "valid")
+
+    def test_no_text_events_in_stream(self):
+        events = '\n'.join([
+            '{"type":"step_start","step":{"name":"search"}}',
+            '{"type":"tool_use","tool":{"name":"Read"}}',
+            '{"type":"step_finish","step":{"name":"search"}}',
+        ])
+        text, error, is_stream = _parse_opencode_events(events)
+        self.assertTrue(is_stream)
+        self.assertEqual(text, "")
+        self.assertEqual(error, "")
+
+    def test_error_and_text_both_present(self):
+        events = '\n'.join([
+            '{"type":"text","part":{"text":"partial result"}}',
+            '{"type":"error","error":{"data":{"message":"fatal error"}}}',
+        ])
+        text, error, is_stream = _parse_opencode_events(events)
+        self.assertTrue(is_stream)
+        self.assertEqual(text, "partial result")
+        self.assertIn("fatal error", error)
+
+    def test_multiple_error_events_concatenated(self):
+        events = '\n'.join([
+            '{"type":"error","error":{"data":{"message":"first error"}}}',
+            '{"type":"error","error":{"data":{"message":"second error"}}}',
+        ])
+        text, error, is_stream = _parse_opencode_events(events)
+        self.assertTrue(is_stream)
+        self.assertEqual(text, "")
+        self.assertIn("first error", error)
+        self.assertIn("second error", error)
+
+
 class TestAgentClientOpenCode(unittest.TestCase):
-    def test_opencode_success_passes_model(self):
-        completed = _subprocess_completed(stdout='{"conclusion":"已定位"}', stderr="", returncode=0)
+    def test_opencode_success_with_event_stream(self):
+        events = '\n'.join([
+            '{"type":"step_start","step":{"name":"search"}}',
+            '{"type":"text","part":{"text":"{\\"conclusion\\":\\"已定位\\"}"}}',
+            '{"type":"step_finish","step":{"name":"search"}}',
+        ])
+        completed = _subprocess_completed(stdout=events, stderr="", returncode=0)
         with patch("zentao_analyzer.agent_client.subprocess.run", return_value=completed) as mock_run:
             result = AgentClient(AgentConfig(agent="opencode", command="opencode", model="model-a", timeout=5, cwd="/repo")).call("prompt")
         self.assertTrue(result.ok)
+        self.assertEqual(result.json_data["conclusion"], "已定位")
         cmd = mock_run.call_args[0][0]
         self.assertEqual(cmd[:2], ["opencode", "run"])
+        self.assertIn("--format", cmd)
+        self.assertIn("json", cmd)
+        self.assertIn("--dir", cmd)
+        self.assertIn("/repo", cmd)
         self.assertIn("--model", cmd)
         self.assertIn("model-a", cmd)
         self.assertNotIn("--dangerously-skip-permissions", cmd)
         self.assertEqual(cmd[-1], "prompt")
+
+    def test_opencode_error_event_returns_failure(self):
+        events = '{"type":"error","error":{"data":{"message":"API key invalid"}}}'
+        completed = _subprocess_completed(stdout=events, stderr="", returncode=0)
+        with patch("zentao_analyzer.agent_client.subprocess.run", return_value=completed):
+            result = AgentClient(AgentConfig(agent="opencode")).call("prompt")
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_kind, "runtime")
+        self.assertIn("API key invalid", result.error)
+
+    def test_opencode_event_stream_no_text_returns_parse_empty(self):
+        events = '\n'.join([
+            '{"type":"step_start","step":{"name":"search"}}',
+            '{"type":"tool_use","tool":{"name":"Read"}}',
+            '{"type":"step_finish","step":{"name":"search"}}',
+        ])
+        completed = _subprocess_completed(stdout=events, stderr="", returncode=0)
+        with patch("zentao_analyzer.agent_client.subprocess.run", return_value=completed):
+            result = AgentClient(AgentConfig(agent="opencode")).call("prompt")
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_kind, "parse_empty")
+
+    def test_opencode_error_priority_over_text(self):
+        events = '\n'.join([
+            '{"type":"text","part":{"text":"partial"}}',
+            '{"type":"error","error":{"data":{"message":"crash"}}}',
+        ])
+        completed = _subprocess_completed(stdout=events, stderr="", returncode=0)
+        with patch("zentao_analyzer.agent_client.subprocess.run", return_value=completed):
+            result = AgentClient(AgentConfig(agent="opencode")).call("prompt")
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_kind, "runtime")
+        self.assertIn("crash", result.error)
+
+    def test_opencode_fallback_raw_text_when_not_event_stream(self):
+        completed = _subprocess_completed(stdout='{"conclusion":"已定位"}', stderr="", returncode=0)
+        with patch("zentao_analyzer.agent_client.subprocess.run", return_value=completed) as mock_run:
+            result = AgentClient(AgentConfig(agent="opencode", command="opencode", model="model-a", timeout=5, cwd="/repo")).call("prompt")
+        self.assertTrue(result.ok)
+        self.assertEqual(result.json_data["conclusion"], "已定位")
+
+    def test_opencode_preserves_extra_args(self):
+        completed = _subprocess_completed(stdout='{"conclusion":"done"}', stderr="", returncode=0)
+        with patch("zentao_analyzer.agent_client.subprocess.run", return_value=completed) as mock_run:
+            AgentClient(AgentConfig(agent="opencode", extra_args=["--verbose"])).call("prompt")
+        cmd = mock_run.call_args[0][0]
+        self.assertIn("--verbose", cmd)
+
+    def test_opencode_non_zero_returncode_with_error_event(self):
+        events = '{"type":"error","error":{"data":{"message":"connection refused"}}}'
+        completed = _subprocess_completed(stdout=events, stderr="", returncode=1)
+        with patch("zentao_analyzer.agent_client.subprocess.run", return_value=completed):
+            result = AgentClient(AgentConfig(agent="opencode")).call("prompt")
+        self.assertFalse(result.ok)
+        self.assertIn("connection refused", result.error)
 
 
 if __name__ == "__main__":

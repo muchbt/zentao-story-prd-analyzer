@@ -162,7 +162,7 @@ def main():
     parser.add_argument("--password", help="禅道密码")
     parser.add_argument("--token", help="禅道 token")
     parser.add_argument("--use-env", action="store_true", help="强制使用环境变量登录")
-    parser.add_argument("--output", help="阶段一结果输出 JSON 文件路径（默认 stdout）")
+    parser.add_argument("--output", help="结果输出 JSON 文件路径（默认 stdout）")
     parser.add_argument("--analyze", action="store_true", help="获取数据后继续执行代码分析和 PRD 生成")
     parser.add_argument("--repo-path", help="兼容入口：单一代码仓库路径")
     parser.add_argument("--repo", action="append", help="代码仓库；单仓传 path，多仓重复传 role=path")

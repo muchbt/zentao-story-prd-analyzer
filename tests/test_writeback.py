@@ -17,7 +17,7 @@ class TestWriteback(unittest.TestCase):
         result = writeback_to_zentao(item_id="1")
         self.assertEqual(result["supported"], False)
         self.assertEqual(result["status"], "not_implemented")
-        self.assertIn("阶段三不实现", result["message"])
+        self.assertIn("禅道回写未实现", result["message"])
 
 
 if __name__ == "__main__":

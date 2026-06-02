@@ -9,5 +9,5 @@ def writeback_to_zentao(*args, **kwargs):
     return {
         "supported": False,
         "status": "not_implemented",
-        "message": "阶段三不实现禅道回写",
+        "message": "禅道回写未实现",
     }
