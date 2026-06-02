@@ -16,6 +16,7 @@ cp "$SRC_DIR/main.py" "$DIST_DIR/main.py"
 cp "$SRC_DIR/SKILL.md" "$DIST_DIR/SKILL.md"
 cp "$SRC_DIR/SKILL.yaml" "$DIST_DIR/SKILL.yaml"
 cp "$SRC_DIR/README.md" "$DIST_DIR/README.md"
+cp "$SRC_DIR/USER_MANUAL.md" "$DIST_DIR/USER_MANUAL.md"
 
 for f in "$SRC_DIR/zentao_analyzer"/*.py; do
   [ -f "$f" ] && cp "$f" "$PKG_DIR/"

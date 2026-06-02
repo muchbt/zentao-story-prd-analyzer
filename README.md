@@ -21,10 +21,10 @@ python3 -m zentao_analyzer.main --help
 常见运行模式：
 
 ```bash
-# 阶段一：只抓取禅道条目，stdout 输出 JSON
+# 只抓取禅道条目，stdout 输出 JSON
 python3 main.py --module requirement --id 5939
 
-# 阶段二到六：抓取禅道条目后分析本地代码，生成 PRD/ISSUE、summary 和 debug bundle
+# 抓取禅道条目后分析本地代码，生成 PRD/ISSUE、summary 和 debug bundle
 python3 main.py --module requirement --id 5939 --analyze --repo-path .
 
 # 指定 Agent
@@ -143,7 +143,7 @@ Feature Item 的 PRD 包含固定章节：
 
 ---
 
-## 阶段一：禅道 CLI 数据闭环
+## 禅道 CLI 数据闭环
 
 ### 环境要求
 
@@ -193,10 +193,10 @@ python3 main.py --login --use-env
 # 登录禅道（使用命令行参数）
 python3 main.py --login --server https://zentao.example.com --user admin --password ***
 
-# 将阶段一结果写入文件
+# 将结果写入文件
 python3 main.py --module story --project 3 --output story_data.json
 
-# 获取数据后继续执行代码分析与 PRD 生成（阶段二）
+# 获取数据后继续执行代码分析与 PRD 生成
 python3 main.py --module story --project 3 --analyze --repo-path ./my-repo
 ```
 
@@ -239,7 +239,7 @@ python3 main.py --module story --project 3 --analyze --repo-path ./my-repo
 
 ---
 
-## 阶段四：Agent、日志与 Debug Bundle
+## Agent、日志与 Debug Bundle
 
 ### Agent 选择
 
@@ -354,7 +354,7 @@ stderr 会输出脱敏后的单条重试命令。只有用户确认后才重新�
 
 ---
 
-## 阶段五：证据可追溯性
+## 证据可追溯性
 
 ### 代码线索
 
