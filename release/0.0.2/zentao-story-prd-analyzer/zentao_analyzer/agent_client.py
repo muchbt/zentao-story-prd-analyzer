@@ -39,7 +39,6 @@ class AgentResult:
     gateway_session_ref: str = ""
     gateway_events: List[Dict[str, Any]] = dataclasses.field(default_factory=list)
     gateway_transport_error: str = ""
-    gateway_stop_reason: str = ""
 
 
 def _now_ms() -> int:
@@ -577,7 +576,6 @@ class AgentClient:
                 model=self.config.model,
                 gateway_session_ref=gw_result.session_ref,
                 gateway_events=gw_result.events,
-                gateway_stop_reason=gw_result.stop_reason,
             )
         try:
             data = extract_json_object(text)
@@ -593,7 +591,6 @@ class AgentClient:
                 model=self.config.model,
                 gateway_session_ref=gw_result.session_ref,
                 gateway_events=gw_result.events,
-                gateway_stop_reason=gw_result.stop_reason,
             )
         return AgentResult(
             ok=True,
@@ -605,7 +602,6 @@ class AgentClient:
             model=self.config.model,
             gateway_session_ref=gw_result.session_ref,
             gateway_events=gw_result.events,
-            gateway_stop_reason=gw_result.stop_reason,
         )
 
     def _parse_gateway_failure(self, gw_result, started: int) -> AgentResult:
@@ -623,5 +619,4 @@ class AgentClient:
             gateway_session_ref=gw_result.session_ref,
             gateway_events=gw_result.events,
             gateway_transport_error=gw_result.transport_error,
-            gateway_stop_reason=gw_result.stop_reason,
         )

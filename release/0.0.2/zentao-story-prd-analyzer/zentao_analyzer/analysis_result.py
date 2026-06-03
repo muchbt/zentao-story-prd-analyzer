@@ -900,7 +900,6 @@ class AnalysisResult:
     gateway_error_code: str = ""
     gateway_events: List = dataclasses.field(default_factory=list)
     gateway_transport_error: str = ""
-    gateway_stop_reason: str = ""
 
     @classmethod
     def from_llm_json(cls, item: ZentaoItem, data: Dict[str, Any], raw_response: str = "") -> "AnalysisResult":

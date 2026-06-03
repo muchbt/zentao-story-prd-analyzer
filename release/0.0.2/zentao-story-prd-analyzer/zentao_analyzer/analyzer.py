@@ -388,7 +388,6 @@ def analyze(
             result.gateway_error_code = llm_data.get("gateway_error_code", "")
             result.gateway_events = llm_data.get("gateway_events", [])
             result.gateway_transport_error = llm_data.get("gateway_transport_error", "")
-            result.gateway_stop_reason = llm_data.get("gateway_stop_reason", "")
             return result
 
         if item.type in ("story", "requirement"):
@@ -416,5 +415,4 @@ def analyze(
         result.gateway_error_code = llm_data.get("gateway_error_code", "")
         result.gateway_events = llm_data.get("gateway_events", [])
         result.gateway_transport_error = llm_data.get("gateway_transport_error", "")
-        result.gateway_stop_reason = llm_data.get("gateway_stop_reason", "")
     return result

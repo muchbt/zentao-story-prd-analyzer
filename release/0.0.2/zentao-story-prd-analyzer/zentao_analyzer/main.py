@@ -479,7 +479,7 @@ def main():
             )
             logger.info("analyze", "done", status="done", item_id=item.id, confidence=result.confidence)
         error_kind = _plain_value(getattr(result, "error_kind", ""), "")
-        retryable = error_kind in ("parse", "parse_empty", "gateway_empty_response")
+        retryable = error_kind in ("parse", "parse_empty")
         if result.error and error_kind == "timeout":
             current_timeout = runtime_config.agent_timeout
             suggested_timeout = current_timeout * 2
@@ -596,7 +596,6 @@ def main():
         gw_session_ref = _plain_value(getattr(result, "gateway_session_ref", ""))
         gw_error_code = _plain_value(getattr(result, "gateway_error_code", ""))
         gw_transport_error = _plain_value(getattr(result, "gateway_transport_error", ""))
-        gw_stop_reason = _plain_value(getattr(result, "gateway_stop_reason", ""))
         gw_events = getattr(result, "gateway_events", None)
         if not isinstance(gw_events, list):
             gw_events = []
@@ -628,7 +627,6 @@ def main():
                 "gateway_error_code": gw_error_code,
                 "gateway_transport_error": gw_transport_error,
                 "gateway_backend_agent": gw_backend_agent,
-                "gateway_stop_reason": gw_stop_reason,
                 "failed": bool(result.error),
             })
 

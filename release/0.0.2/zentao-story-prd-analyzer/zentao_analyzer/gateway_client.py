@@ -28,7 +28,6 @@ GATEWAY_ERROR_MAP = {
     "incompatible_session": "runtime",
     "session_cleanup_failed": "runtime",
     "invalid_session_state": "runtime",
-    "agent_empty_response": "gateway_empty_response",
 }
 
 
@@ -50,7 +49,6 @@ class GatewayResult:
     error: str = ""
     error_kind: str = ""
     error_code: str = ""
-    stop_reason: str = ""
     events: List[Dict[str, Any]] = dataclasses.field(default_factory=list)
     transport_error: str = ""
     duration_ms: int = 0
@@ -253,25 +251,10 @@ def call_gateway_start_session(
 
     status = result_json.get("status", "")
     if status == "completed":
-        text = result_json.get("text", "")
-        stop_reason = result_json.get("stopReason", "") or result_json.get("stop_reason", "")
-        if stop_reason == "empty_response" or not text:
-            return GatewayResult(
-                ok=False,
-                text="",
-                stop_reason=stop_reason or "empty_response",
-                error_code="agent_empty_response",
-                error="Agent completed but returned no final text via ACP",
-                error_kind="runtime",
-                session_ref=session_ref,
-                events=events,
-                duration_ms=_now_ms() - started,
-            )
         return GatewayResult(
             ok=True,
-            text=text,
+            text=result_json.get("text", ""),
             session_ref=session_ref,
-            stop_reason=stop_reason,
             events=events,
             duration_ms=_now_ms() - started,
         )

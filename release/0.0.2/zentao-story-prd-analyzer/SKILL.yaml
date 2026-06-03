@@ -1,0 +1,98 @@
+name: zentao-story-prd-analyzer
+description: 从禅道获取 story/bug，AGENT 主动分析代码实现情况，对比 story 描述，生成智能修改建议、优先级评分，并生成 PRD 文档
+inputs:
+  - name: project_id
+    description: 禅道项目编号
+    type: string
+  - name: item_type
+    description: 类型（story 或 bug）
+    type: string
+    default: story
+  - name: status
+    description: 状态过滤
+    type: string
+    default: open
+  - name: repo_path
+    description: 兼容入口：单一本地代码仓库路径
+    type: string
+  - name: repo
+    description: 代码仓库；单仓传 path，多仓重复传 role=path
+    type: string
+  - name: agent
+    description: Agent CLI 类型（gateway、codex、claude、opencode）
+    type: string
+    default: codex
+  - name: gateway_agent
+    description: ACP Agent Gateway Agent 名称（opencode、claude、codex）
+    type: string
+    default: opencode
+  - name: gateway_bin
+    description: ACP Agent Gateway CLI 命令
+    type: string
+  - name: model
+    description: Agent CLI 模型名（显式指定时传递）
+    type: string
+  - name: agent_timeout
+    description: Agent 调用超时时间，单位秒
+    type: number
+    default: 120
+  - name: claude_command
+    description: Claude CLI 命令
+    type: string
+    default: claude
+  - name: codex_command
+    description: Codex CLI 命令
+    type: string
+    default: codex
+  - name: opencode_command
+    description: OpenCode CLI 命令
+    type: string
+    default: opencode
+  - name: claude_prompt_via
+    description: Claude prompt 传递方式（stdin 或 arg）
+    type: string
+    default: stdin
+  - name: verbose
+    description: 输出详细 stderr 日志
+    type: boolean
+    default: false
+  - name: quiet
+    description: 抑制进度日志，stdout 保持最终 JSON
+    type: boolean
+    default: false
+  - name: log_file
+    description: JSONL 运行日志路径
+    type: string
+  - name: debug_bundle_dir
+    description: Debug bundle 输出目录
+    type: string
+  - name: no_debug_bundle
+    description: 关闭默认 debug bundle
+    type: boolean
+    default: false
+  - name: debug_include_code
+    description: 在 debug bundle 中保存代码上下文快照
+    type: boolean
+    default: false
+  - name: clues
+    description: 搜索建议，逗号分隔，写入 Agent prompt
+    type: string
+  - name: paths
+    description: Seed Path 文件线索，逗号分隔，必须是 repo_path 内文件
+    type: string
+  - name: clues_file
+    description: 按禅道条目 ID 提供代码线索的 JSON 文件
+    type: string
+  - name: protocol_hint
+    description: 通信协议线索，可重复；格式 [role1,role2:]type=value 或文本
+    type: string
+outputs:
+  - name: prd_docs
+    description: 自动生成的 PRD 文档列表，包括 LLM 判断和优先级评分
+run:
+  python: main.py
+agents:
+  - gateway
+  - codex
+  - claude
+  - opencode

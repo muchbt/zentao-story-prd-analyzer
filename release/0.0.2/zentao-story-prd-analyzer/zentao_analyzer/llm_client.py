@@ -20,8 +20,6 @@ def call_llm(prompt: str, agent: str = "codex", agent_config: Optional[AgentConf
             error_data["gateway_events"] = result.gateway_events
         if result.gateway_transport_error:
             error_data["gateway_transport_error"] = result.gateway_transport_error
-        if result.gateway_stop_reason:
-            error_data["gateway_stop_reason"] = result.gateway_stop_reason
         return error_data
     data = dict(result.json_data)
     data["raw"] = result.raw_response
@@ -29,6 +27,4 @@ def call_llm(prompt: str, agent: str = "codex", agent_config: Optional[AgentConf
         data["gateway_session_ref"] = result.gateway_session_ref
     if result.gateway_events:
         data["gateway_events"] = result.gateway_events
-    if result.gateway_stop_reason:
-        data["gateway_stop_reason"] = result.gateway_stop_reason
     return data

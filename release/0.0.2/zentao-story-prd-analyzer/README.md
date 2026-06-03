@@ -83,20 +83,18 @@ python3 scripts/smoke_gateway_real_adapter.py \
 
 ### 离线交付
 
-生成离线交付目录（acp-agent-gateway 路径为可选）：
+生成离线交付目录：
 
 ```bash
-scripts/build_offline_release.sh <版本号> [/path/to/acp-agent-gateway]
+scripts/build_offline_release.sh <版本号> /path/to/acp-agent-gateway
 ```
-
-不传 Gateway 路径时仅构建 analyzer Skill 包，不包含 Gateway。
 
 输出目录：
 
 ```text
 release/<版本号>/
 ├── zentao-story-prd-analyzer/
-├── gateway/                              # 仅在提供 Gateway 路径时存在
+├── gateway/
 │   └── local-acp-agent-gateway-<version>.tgz
 ├── install.sh
 ├── install-skill.sh
@@ -105,16 +103,14 @@ release/<版本号>/
 └── OFFLINE_RELEASE.md
 ```
 
-目标机安装：
+目标机完整安装：
 
 ```bash
 cd release/<版本号>
 ./install.sh
 ```
 
-`install.sh` 会先安装 analyzer Skill，然后询问是否安装可选的 ACP Agent Gateway（默认跳过），最后运行预检。由于当前 `opencode acp` 存在空白响应问题，推荐跳过 Gateway 安装，analyzer 默认使用直接后端（`--agent opencode`）。
-
-Skill 默认安装到 `SKILL_INSTALL_ROOT`；未设置时优先使用 `~/.agents/skills`，否则使用 `${CODEX_HOME:-~/.codex}/skills`。也可以只安装 Skill：
+`install.sh` 会依次安装 analyzer Skill、安装 Gateway、运行预检。Skill 默认安装到 `SKILL_INSTALL_ROOT`；未设置时优先使用 `~/.agents/skills`，否则使用 `${CODEX_HOME:-~/.codex}/skills`。也可以只安装 Skill：
 
 ```bash
 SKILL_INSTALL_ROOT=/path/to/skills ./install-skill.sh
@@ -122,7 +118,7 @@ SKILL_INSTALL_ROOT=/path/to/skills ./install-skill.sh
 ./install-skill.sh /path/to/skills
 ```
 
-单独安装 Gateway（可选）：
+单独安装 Gateway：
 
 ```bash
 cd release/<版本号>
@@ -399,13 +395,12 @@ Debug bundle 会默认脱敏，但仍可能包含业务上下文、prompt 和模
 
 如果 Agent 返回的内容无法解析为结构化 JSON，分析器不会自动重试，也不会由宿主 Agent 绕过分析器继续生成替代结论。该条目仍会生成诊断文档、summary 和 debug bundle，并以 exit code `0` 结束。
 
-解析失败分为三类，均标记为可重试：
+解析失败分为两类，均标记为可重试：
 
 | error_kind | 含义 | 典型场景 |
 |-----------|------|---------|
 | `parse` | Agent 回答中包含 JSON 但格式错误、引号未转义或结构不完整 | LLM 输出 JSON 不符合 Schema |
 | `parse_empty` | Agent 回答中完全不包含 JSON（无 `{`） | Claude 思考文本泄漏到 stdout、Codex JSONL 流中无 `agent_message` |
-| `gateway_empty_response` | Gateway Adapter 返回空文本（`stopReason: "empty_response"`） | opencode acp 适配器未通过 `agent_message_chunk` 通知回传文本；多见于 ACP 适配器协议转换问题 |
 
 最终 JSON 会标记可人工重试的条目：
 
