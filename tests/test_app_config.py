@@ -20,6 +20,10 @@ class TestAppConfig(unittest.TestCase):
             opencode_command=None,
             claude_prompt_via=None,
             claude_extra_arg=None,
+            gateway_agent=None,
+            gateway_bin=None,
+            gateway_permission_policy=None,
+            gateway_idle_timeout=None,
             verbose=False,
             quiet=False,
             log_file=None,
@@ -36,6 +40,9 @@ class TestAppConfig(unittest.TestCase):
         self.assertEqual(config.codex_command, "codex")
         self.assertEqual(config.opencode_command, "opencode")
         self.assertEqual(config.claude_prompt_via, "stdin")
+        self.assertEqual(config.gateway_agent, "")
+        self.assertEqual(config.gateway_permission_policy, "best-effort-read-only")
+        self.assertEqual(config.gateway_idle_timeout, 300)
         self.assertTrue(config.debug_bundle_enabled)
         self.assertFalse(config.debug_include_code)
 
@@ -49,6 +56,10 @@ class TestAppConfig(unittest.TestCase):
             opencode_command=None,
             claude_prompt_via=None,
             claude_extra_arg=None,
+            gateway_agent=None,
+            gateway_bin=None,
+            gateway_permission_policy=None,
+            gateway_idle_timeout=None,
             verbose=False,
             quiet=False,
             log_file=None,
@@ -87,6 +98,10 @@ class TestAppConfig(unittest.TestCase):
             opencode_command="opencode-cli",
             claude_prompt_via="stdin",
             claude_extra_arg=["--foo", "bar"],
+            gateway_agent=None,
+            gateway_bin=None,
+            gateway_permission_policy=None,
+            gateway_idle_timeout=None,
             verbose=True,
             quiet=False,
             log_file="run.jsonl",
@@ -121,6 +136,10 @@ class TestAppConfig(unittest.TestCase):
             opencode_command=None,
             claude_prompt_via=None,
             claude_extra_arg=None,
+            gateway_agent=None,
+            gateway_bin=None,
+            gateway_permission_policy=None,
+            gateway_idle_timeout=None,
             verbose=False,
             quiet=False,
             log_file=None,
@@ -133,6 +152,114 @@ class TestAppConfig(unittest.TestCase):
             self.assertEqual(build_runtime_config(args).agent, "codex")
         with patch.dict(os.environ, {}, clear=True), patch("zentao_analyzer.app_config.shutil.which", side_effect=lambda name: name if name == "opencode" else None):
             self.assertEqual(build_runtime_config(args).agent, "opencode")
+
+    def test_agent_gateway_requires_gateway_agent(self):
+        args = argparse.Namespace(
+            agent="gateway",
+            model=None,
+            agent_timeout=None,
+            claude_command=None,
+            codex_command=None,
+            opencode_command=None,
+            claude_prompt_via=None,
+            claude_extra_arg=None,
+            gateway_agent=None,
+            gateway_bin=None,
+            gateway_permission_policy=None,
+            gateway_idle_timeout=None,
+            verbose=False,
+            quiet=False,
+            log_file=None,
+            no_debug_bundle=False,
+            debug_bundle_dir=None,
+            debug_include_code=False,
+            repo_path=".",
+        )
+        with patch.dict(os.environ, {}, clear=True):
+            with self.assertRaises(ValueError) as ctx:
+                build_runtime_config(args)
+            self.assertIn("gateway-agent", str(ctx.exception))
+
+    def test_agent_gateway_with_gateway_agent_is_accepted(self):
+        args = argparse.Namespace(
+            agent="gateway",
+            model=None,
+            agent_timeout=None,
+            claude_command=None,
+            codex_command=None,
+            opencode_command=None,
+            claude_prompt_via=None,
+            claude_extra_arg=None,
+            gateway_agent="opencode",
+            gateway_bin=None,
+            gateway_permission_policy=None,
+            gateway_idle_timeout=None,
+            verbose=False,
+            quiet=False,
+            log_file=None,
+            no_debug_bundle=False,
+            debug_bundle_dir=None,
+            debug_include_code=False,
+            repo_path=".",
+        )
+        with patch.dict(os.environ, {}, clear=True):
+            config = build_runtime_config(args)
+        self.assertEqual(config.agent, "gateway")
+        self.assertEqual(config.gateway_agent, "opencode")
+
+    def test_gateway_permission_policy_defaults_and_enforces_valid_values(self):
+        args = argparse.Namespace(
+            agent="gateway",
+            gateway_agent="opencode",
+            gateway_permission_policy="invalid-policy",
+            gateway_idle_timeout=None,
+            gateway_bin=None,
+            model=None,
+            agent_timeout=None,
+            claude_command=None,
+            codex_command=None,
+            opencode_command=None,
+            claude_prompt_via=None,
+            claude_extra_arg=None,
+            verbose=False,
+            quiet=False,
+            log_file=None,
+            no_debug_bundle=False,
+            debug_bundle_dir=None,
+            debug_include_code=False,
+            repo_path=".",
+        )
+        with patch.dict(os.environ, {}, clear=True):
+            config = build_runtime_config(args)
+        self.assertEqual(config.gateway_permission_policy, "best-effort-read-only")
+
+    def test_environment_variables_for_debug_are_loaded(self):
+        args = argparse.Namespace(
+            agent=None,
+            model=None,
+            agent_timeout=None,
+            claude_command=None,
+            codex_command=None,
+            opencode_command=None,
+            claude_prompt_via=None,
+            claude_extra_arg=None,
+            gateway_agent=None,
+            gateway_bin=None,
+            gateway_permission_policy=None,
+            gateway_idle_timeout=None,
+            verbose=False,
+            quiet=False,
+            log_file=None,
+            no_debug_bundle=False,
+            debug_bundle_dir=None,
+            debug_include_code=False,
+            repo_path="/repo",
+        )
+        env = {"LLM_AGENT": "claude", "AGENT_TIMEOUT": "9", "DEBUG_BUNDLE_DIR": "/tmp/debugs-env"}
+        with patch.dict(os.environ, env, clear=True), patch("zentao_analyzer.app_config.shutil.which", side_effect=lambda name: name if name == "claude" else None):
+            config = build_runtime_config(args)
+        self.assertEqual(config.agent_timeout, 9)
+        self.assertEqual(config.debug_bundle_dir, "/tmp/debugs-env")
 
 
 if __name__ == "__main__":

@@ -5,233 +5,120 @@ description: Use when the user wants to analyze a Zentao story, requirement, bug
 
 # Zentao Story PRD Analyzer
 
-This skill is a thin Agent CLI wrapper around the bundled analyzer CLI. It runs the analyzer against a Target Repository Set and produces PRD/ISSUE documents with traceable code evidence.
+Thin wrapper around the bundled analyzer CLI. It analyzes Zentao items against a Target Repository Set and writes PRD/ISSUE documents, summaries, and debug bundles with traceable code evidence.
 
-## When to Use
+## Use
 
-Use this skill to analyze Zentao `story`, `requirement`, `bug`, `ticket`, or `feedback` items against the current repository. Do not use it for Zentao-only lookup, status checks, field inspection, or comments; prefer the official Zentao skill or direct `zentao` CLI for those cases.
+Use for Zentao `story`, `requirement`, `bug`, `task`, `ticket`, or `feedback` analysis. Do not use for Zentao-only lookup, status checks, field inspection, or comments; use the Zentao CLI/skill for those.
 
-## Terms
-
-- **Target Repository Set**: one or more repositories analyzed together for the same item.
-- **Repository Role**: a user-provided responsibility name such as `soc`, `mcu`, `app`, or `bootloader`.
-- **Analyzer Directory**: the installed skill directory containing this `SKILL.md`, `main.py`, and `zentao_analyzer/`.
-- **Search Hint**: text passed via `--clues` or `clues_file.clues` to guide Agent repository search.
-- **Seed Path**: a repository file passed via `--paths` or `clues_file.paths`; it is preloaded as starting context. Directories are not valid Seed Paths.
-- **Protocol Hint**: a communication-protocol clue passed via `--protocol-hint` or `clues_file.items.<id>.protocol_hints`, such as a command ID, message, field, or text identifier.
-- **Structured Clue File**: a JSON file that carries repositories and item-specific clues for complex multi-repository analysis.
+Terms:
+- **Target Repository Set**: one or more repositories analyzed for the same item.
+- **Repository Role**: role name such as `soc`, `mcu`, `app`, or `bootloader`.
+- **Analyzer Directory**: installed directory containing `main.py` and `zentao_analyzer/`.
+- **Search Hint**: `--clues` or `clues_file.clues`.
+- **Seed Path**: repository file passed by `--paths` or `clues_file.paths`; directories are invalid.
+- **Protocol Hint**: `--protocol-hint` or `clues_file.items.<id>.protocol_hints`; types: `cmd_id`, `msg`, `field`, `text`.
 
 ## Preconditions
 
-1. Run from the single Target Repository, or provide `--repo`. Use repeated `--repo <role>=<path>` for multi-repository analysis.
-2. Verify the bundled analyzer is available:
+- Run from the single target repository, or pass repeated `--repo <role>=<path>` for multi-repo analysis.
+- Check the analyzer with `python3 <ANALYZER_DIR>/main.py --help`.
+- Check `zentao` with `command -v zentao` and, when needed, `zentao profile`. Do not use `zentao user` as an auth check; the analyzer item fetch validates auth.
+- Prefer Gateway: `--agent gateway --gateway-agent <opencode|claude|codex>`. Legacy direct backends are `--agent claude`, `--agent codex`, and `--agent opencode`.
+- Never print tokens, passwords, API keys, Authorization headers, or login commands containing secrets.
 
-   ```bash
-   python3 <ANALYZER_DIR>/main.py --help
-   ```
+## Invocation
 
-3. Verify `zentao` CLI is available and a profile is selected when needed:
-
-   ```bash
-   command -v zentao
-   zentao profile
-   ```
-
-   Do not use `zentao user` as an authentication check: it reads the user module rather than identifying the current session and may require unrelated permission. The analyzer's requested item fetch validates authentication and reports authentication failures.
-
-4. Select the Agent backend to match the host CLI:
-   - Claude Code: `--agent claude`
-   - Codex: `--agent codex`
-   - OpenCode: `--agent opencode`
-
-Never print tokens, passwords, API keys, Authorization headers, or full login commands containing secrets.
-
-## Invocation Rules
-
-- Default to full analysis with `--analyze`.
-- Prefer `--repo`; retain `--repo-path` only for compatibility with existing single-repository calls.
-- Run the command with the Target Repository as the process working directory, while calling `<ANALYZER_DIR>/main.py` by absolute path.
-- Always set `--agent` to the host CLI when invoked as a skill.
-- Add `--quiet` when stdout should remain machine-readable JSON.
-- Add `--output-root <TARGET_REPO>/docs` if the working directory is not the Target Repository.
-- Do not use `--module issue`; ISSUE is an output document type. Use real Zentao modules such as `story`, `requirement`, `bug`, `task`, `ticket`, or `feedback`.
-- When the user says "需求" or "requirement", use `--module requirement`. When the user says "缺陷", "Bug" or "bug", use `--module bug`. When the user says "Story" or "故事", use `--module story`. Do not map "需求" to the `story` module.
-- Do not use removed options `--keywords`, `--symbols`, `--incremental`, or `--last-commit`.
-- If providing clues, use `--clues` for Search Hints and `--paths` only for repository files.
-- For multi-repository Seed Paths, use `role=relative/path.c` or a Structured Clue File.
-- Translate explicit natural-language repository roles and communication-protocol clues into a temporary Structured Clue File when the input is complex. Ask the user before guessing hint type, repository role, or item ownership.
-
-The Agent CLI subprocess is read/search-only. It must return structured JSON to the analyzer and must not write Target Repository files, debug bundles, PRD/ISSUE documents, summaries, explicit output files, or log files. Only the analyzer process writes generated outputs.
-
-## Command Templates
-
-Single feature item (Zentao ID):
+Base command:
 
 ```bash
-python3 <ANALYZER_DIR>/main.py \
-  --module requirement \
-  --id <zentao_id> \
-  --analyze \
-  --repo-path <target_repo> \
-  --agent <claude|codex|opencode> \
-  --agent-timeout 900 \
-  --quiet
+python3 <ANALYZER_DIR>/main.py --module <module> --id <zentao_id> --analyze \
+  --repo-path <target_repo> --agent gateway --gateway-agent <opencode|claude|codex> \
+  --agent-timeout 900 --quiet
 ```
-
-Provided Requirement (user-submitted requirement text):
-
-```bash
-python3 <ANALYZER_DIR>/main.py \
-  --module requirement \
-  --id <user_provided_id> \
-  --title "Confirmed Requirement Title" \
-  --requirement-file /tmp/requirement.txt \
-  --analyze \
-  --repo-path <target_repo> \
-  --agent <claude|codex|opencode> \
-  --agent-timeout 900 \
-  --quiet
-```
-
-With Search Hints and Seed Paths:
-
-```bash
-python3 <ANALYZER_DIR>/main.py \
-  --module requirement \
-  --id <zentao_id> \
-  --analyze \
-  --repo-path <target_repo> \
-  --agent <claude|codex|opencode> \
-  --clues "keyword,SymbolName,src/module" \
-  --paths "src/module/entry.c" \
-  --agent-timeout 900 \
-  --quiet
-```
-
-Multi-repository analysis with a communication-protocol clue:
-
-```bash
-python3 <ANALYZER_DIR>/main.py \
-  --module requirement \
-  --id <zentao_id> \
-  --analyze \
-  --repo soc=/path/to/soc \
-  --repo mcu=/path/to/mcu \
-  --protocol-hint soc,mcu:cmd_id=0x1234 \
-  --agent <claude|codex|opencode> \
-  --agent-timeout 900 \
-  --quiet
-```
-
-Batch/list analysis:
-
-```bash
-python3 <ANALYZER_DIR>/main.py \
-  --module requirement \
-  --project <project_id> \
-  --status open \
-  --limit 10 \
-  --analyze \
-  --repo-path <target_repo> \
-  --agent <claude|codex|opencode> \
-  --agent-timeout 900 \
-  --quiet
-```
-
-## Provided Requirement Mode
-
-When a user provides complete requirement text instead of a Zentao ID:
-
-1. Accept the full requirement text from the user.
-2. If the user has not provided a requirement ID, ask for one. The ID is only used for output file naming and does not trigger a Zentao read.
-3. Recommend or confirm the requirement title with the user before proceeding.
-4. Write the text to a temporary file, then invoke the analyzer with `--requirement-file`, `--id`, and `--title`.
 
 Rules:
-- `--requirement-file` is only valid with `--module requirement` or `--module story`.
-- `--requirement-file` requires both `--id` and `--title`.
-- In Provided Requirement mode, the analyzer does **not** call `ZentaoClient.get_item()`, `list_items()`, or login. The ID does not trigger a Zentao lookup or content merge.
-- The requirement source is labeled `provided_requirement` in the output and PRD.
-- Logs and stderr do not echo the full requirement text.
+- Call `<ANALYZER_DIR>/main.py` by absolute path and run with the Target Repository as cwd. Add `--output-root <TARGET_REPO>/docs` if cwd differs.
+- Default to `--analyze`; add `--quiet` when stdout must stay machine-readable JSON.
+- Prefer `--repo`; keep `--repo-path` only for compatible single-repo calls.
+- Use real Zentao modules only: `story`, `requirement`, `bug`, `task`, `ticket`, `feedback`. Never use `--module issue`; ISSUE is an output type.
+- Map user language carefully: "需求"/`requirement` => `--module requirement`; "缺陷"/`bug` => `--module bug`; "Story"/"故事" => `--module story`.
+- Do not use removed options: `--keywords`, `--symbols`, `--incremental`, `--last-commit`.
+- Use `--clues` for Search Hints and `--paths` only for repository files. Multi-repo Seed Paths need `role=relative/path.c` or a Structured Clue File.
+- Use `--protocol-hint roles:type=value`, e.g. `--protocol-hint soc,mcu:cmd_id=0x1234`; ask before guessing hint type, role, or item ownership.
+- For batches, replace `--id` with list filters such as `--project <id> --status open --limit 10`.
+- If Gateway is unavailable (`gateway_transport_error` or `gateway_error`), fall back to the matching legacy host CLI backend.
 
-## PRD Content Boundaries
+The Agent subprocess is read/search-only. It must return structured JSON to the analyzer and must not write Target Repository files, debug bundles, PRD/ISSUE documents, summaries, explicit output files, or logs. Only the analyzer writes outputs.
 
-The PRD separates three types of formal content:
+## Provided Requirement
 
-| Content Type | Source & Purpose | Disallowed |
-| --- | --- | --- |
-| Requirement Interpretation | Summarize scope, terms, rules, scenarios, matrix, and flow from the Requirement Source | Writing code search results or unconfirmed speculation as requirement facts |
-| Code Impact Analysis | Identify related existing modules, files, and symbols; locations must pass validation | Counting "related locations" as completion evidence |
-| Completion Assessment | Derive completion, gaps, and confidence from Requirement Points and valid Code Evidence only | Supporting formal conclusions with ungrounded explanations or Implementation Recommendations |
+When the user provides requirement text instead of a Zentao ID:
+- Ask for an ID if missing; it is only for output naming and must not trigger a Zentao lookup.
+- Confirm the title, write the text to a temp file, and call with `--requirement-file`, `--id`, and `--title`.
+- `--requirement-file` is valid only with `--module requirement` or `--module story`, and requires both `--id` and `--title`.
+- The analyzer must not call `ZentaoClient.get_item()`, `list_items()`, or login; output source is `provided_requirement`.
+- Logs and stderr must not echo the full requirement text.
 
-Items with `source: "code_context"` display a label: "代码侧候选上下文，不构成需求定义". Items with `source: "insufficient"` display: "原始需求未提供足够信息".
+Example:
 
-Implementation Recommendations (section 5) are clearly advisory and do not represent existing implementations.
-
-When `requirement_interpretation` or `code_impact` is missing or structurally invalid but `requirement_points` and Completion Assessment are valid, the PRD is still generated. The affected sections display "分析结果未提供有效内容" and the Summary Report and Debug Bundle record the degradation.
-
-## Clues File
-
-Use the compact legacy form for single-repository runs:
-
-```json
-{
-  "5939": {
-    "clues": ["callback", "CallBackMode", "src/ecall"],
-    "paths": ["src/ecall/xcall.c"]
-  }
-}
+```bash
+python3 <ANALYZER_DIR>/main.py --module requirement --id <provided_id> \
+  --title "Confirmed Requirement Title" --requirement-file /tmp/requirement.txt \
+  --analyze --repo-path <target_repo> --agent gateway --gateway-agent <agent> --quiet
 ```
 
-For multi-repository runs, use a Structured Clue File:
+## PRD Boundaries
+
+Keep these content sources separate:
+- **Requirement Interpretation**: scope, terms, rules, scenarios, matrix, and flow from the Requirement Source. Do not treat code search or speculation as requirement facts.
+- **Code Impact Analysis**: related modules/files/symbols with validated locations. Related locations are not completion evidence by themselves.
+- **Completion Assessment**: completion, gaps, and confidence from Requirement Points plus valid Code Evidence only; recommendations are advisory.
+
+Labels: `source: "code_context"` means "代码侧候选上下文，不构成需求定义"; `source: "insufficient"` means "原始需求未提供足够信息". If `requirement_interpretation` or `code_impact` is missing/invalid but Requirement Points are valid, still generate the PRD, show "分析结果未提供有效内容", and record the degradation in summary/debug bundle.
+
+## Clue Files
+
+Single-repo compact form:
+
+```json
+{"5939":{"clues":["callback","CallBackMode"],"paths":["src/ecall/xcall.c"]}}
+```
+
+Multi-repo Structured Clue File:
 
 ```json
 {
-  "repositories": {
-    "soc": "../soc",
-    "mcu": "../mcu"
-  },
+  "repositories": {"soc": "../soc", "mcu": "../mcu"},
   "items": {
     "5939": {
       "primary_role": "soc",
       "clues": ["callback mode"],
-      "protocol_hints": [
-        {"roles": ["soc", "mcu"], "type": "cmd_id", "value": "0x1234"}
-      ],
-      "paths": {
-        "soc": ["src/send.c"],
-        "mcu": ["src/recv.c"]
-      }
+      "protocol_hints": [{"roles": ["soc","mcu"], "type": "cmd_id", "value": "0x1234"}],
+      "paths": {"soc": ["src/send.c"], "mcu": ["src/recv.c"]}
     }
   }
 }
 ```
 
-Protocol Hint types are `cmd_id`, `msg`, `field`, and `text`. They guide search and protocol-trace reporting; they are not Requirement Sources or Code Evidence.
+Protocol Hints guide search and protocol-trace reporting; they are not Requirement Sources or Code Evidence.
 
 ## Failure Handling
 
-If `zentao` is missing or authentication fails, report the analyzer error and stop.
+- If `zentao` is missing or authentication fails, report the analyzer error and stop.
+- If LLM/Agent execution fails, report the analyzer error and debug bundle path if present.
+- For `analysis[].retryable == true` with `retry_reason == "agent_response_parse_failed"`, say the Agent returned an unparseable structured response and ask before rerun. Do not rerun automatically.
+- In batch analysis, offer only the analyzer-provided redacted retry command for failed items; do not suggest rerunning successful items.
+- Never reconstruct credential/login/sensitive parameters in host output. A retry must not reuse a previous combined-output `--output` path. Use `has_retryable_failure` as the top-level shortcut.
+- After analyzer failure, do not independently fetch Zentao content, inspect the repository, or produce replacement analysis/PRD/ISSUE in the host Agent. Never invent or substitute Zentao content, code evidence, completion status, defect cause, PRD, or ISSUE output.
+- If the user confirms rerun and it succeeds, treat the latest generated PRD/ISSUE and summary as primary; earlier failure remains in its Debug Bundle.
 
-If LLM/Agent execution fails, report the analyzer error and point to the debug bundle path if one was created. If an `analysis[]` item marks a failure as `retryable: true` with `retry_reason: "agent_response_parse_failed"`, state that the Agent returned an unparseable structured response for that Zentao Item and ask the user whether to rerun the analyzer command. Do not rerun automatically. In batch analysis, offer the analyzer's item-specific `--id <zentao_id>` retry command only for failed items; do not suggest rerunning successfully analyzed items. Present only the analyzer-provided redacted retry command; never reconstruct credential, login, or other sensitive parameters in host output. An item-specific rerun must not reuse a previous combined-output `--output` file path. `has_retryable_failure` is the top-level shortcut for detecting whether such items exist.
+## Output
 
-After an analyzer failure, do not fetch the Zentao Item independently, inspect the Target Repository independently, or produce a replacement analysis/PRD/ISSUE in the host Agent. Never invent or substitute Zentao content, code evidence, completion status, defect cause, PRD, or ISSUE output.
-
-If the user explicitly confirms a rerun and it succeeds, treat the latest generated PRD/ISSUE and summary as the primary output. The earlier failure remains reviewable through its Debug Bundle.
-
-## Output Interpretation
-
-The analyzer prints final JSON to stdout unless `--output` is provided. Important fields:
-
-- `items`: fetched Zentao Items or provided requirement item.
-- `analysis`: completion or defect-cause Analysis Results.
-  - `requirement_source`: `"zentao"` or `"provided_requirement"`.
-  - `requirement_interpretation`: structured interpretation (scope, terms, rules, scenarios, matrix, flow, pending confirmations) when present.
-  - `code_impact`: related code locations and impact notes when present.
-  - `requirement_points`: per-point completion assessment.
-  - `rich_content_issues`: list of issues when interpretation or code impact is missing or invalid.
+The analyzer prints JSON to stdout unless `--output` is provided. Key fields:
+- `items`: fetched Zentao items or provided requirement item.
+- `analysis`: result objects including `requirement_source`, `requirement_interpretation`, `code_impact`, `requirement_points`, `rich_content_issues`, `retryable`, and `retry_reason`.
 - `documents`: generated PRD/ISSUE Markdown paths.
 - `summary_report`: machine-readable summary path.
 - `debug_bundle`: diagnostic bundle path.
-- `analysis[].retryable` / `analysis[].retry_reason`: whether an item's failed analysis can be retried by explicit user choice and why.
-- `has_retryable_failure`: whether any analyzed item has such a retryable failure.
+- `has_retryable_failure`: whether any item has a retryable parse failure.

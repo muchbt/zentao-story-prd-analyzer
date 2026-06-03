@@ -68,6 +68,11 @@ def _build_parse_retry_command(args, runtime_config, item_id, agent_timeout=None
         _append_option(command, "--repo-path", runtime_config.repo_path)
     _append_option(command, "--agent", runtime_config.agent)
     _append_option(command, "--model", runtime_config.model)
+    if runtime_config.agent == "gateway":
+        _append_option(command, "--gateway-agent", runtime_config.gateway_agent)
+        _append_option(command, "--gateway-bin", runtime_config.gateway_bin)
+        _append_option(command, "--gateway-permission-policy", runtime_config.gateway_permission_policy)
+        _append_option(command, "--gateway-idle-timeout", runtime_config.gateway_idle_timeout)
     _append_option(
         command,
         "--agent-timeout",
@@ -174,6 +179,10 @@ def main():
     parser.add_argument("--opencode-command", help="OpenCode CLI 命令，默认 opencode")
     parser.add_argument("--claude-prompt-via", choices=["stdin", "arg"], help="Claude prompt 传递方式")
     parser.add_argument("--claude-extra-arg", action="append", help="额外 Claude CLI 参数，可重复")
+    parser.add_argument("--gateway-agent", choices=["opencode", "claude", "codex"], help="ACP Agent Gateway Agent 名称")
+    parser.add_argument("--gateway-bin", help="ACP Agent Gateway CLI 命令；默认从 ACP_AGENT_GATEWAY_BIN 环境变量或 PATH 获取")
+    parser.add_argument("--gateway-permission-policy", default="best-effort-read-only", choices=["best-effort-read-only", "strict-read-only"], help="Gateway 权限策略")
+    parser.add_argument("--gateway-idle-timeout", type=int, help="Gateway 空闲超时时间，单位秒")
     parser.add_argument("--verbose", action="store_true", help="输出详细运行日志到 stderr")
     parser.add_argument("--quiet", action="store_true", help="抑制进度日志，stdout 保持机器可读 JSON")
     parser.add_argument("--log-file", help="写入 JSONL 运行日志")
@@ -194,7 +203,11 @@ def main():
         print(f"[错误] {requirement_file_error}", file=sys.stderr)
         return 4
 
-    runtime_config = build_runtime_config(args)
+    try:
+        runtime_config = build_runtime_config(args)
+    except ValueError as exc:
+        print(f"[错误] {exc}", file=sys.stderr)
+        return 4
     logger = RunLogger(verbose=runtime_config.verbose, quiet=runtime_config.quiet, log_file=runtime_config.log_file)
 
     client = ZentaoClient(
@@ -580,6 +593,14 @@ def main():
             "consistency_issues": document_consistency_issues,
         })
 
+        gw_session_ref = _plain_value(getattr(result, "gateway_session_ref", ""))
+        gw_error_code = _plain_value(getattr(result, "gateway_error_code", ""))
+        gw_transport_error = _plain_value(getattr(result, "gateway_transport_error", ""))
+        gw_events = getattr(result, "gateway_events", None)
+        if not isinstance(gw_events, list):
+            gw_events = []
+        gw_backend_agent = runtime_config.gateway_agent if runtime_config.agent == "gateway" else ""
+
         summary_items.append(
             build_summary_item(
                 item,
@@ -591,8 +612,23 @@ def main():
                 invalid_evidence_count=len(validation_issues),
                 debug_bundle=debug_bundle.path if debug_bundle.enabled and not debug_bundle.error else "",
                 repo_set=repo_set,
+                gateway_session_ref=gw_session_ref,
+                gateway_error_code=gw_error_code,
+                gateway_transport_error=gw_transport_error,
+                gateway_backend_agent=gw_backend_agent,
             )
         )
+
+        if gw_events:
+            debug_bundle.write_gateway_events(item.id, gw_events)
+        if gw_session_ref or gw_error_code or gw_transport_error:
+            debug_bundle.write_gateway_diagnostics(item.id, {
+                "gateway_session_ref": gw_session_ref,
+                "gateway_error_code": gw_error_code,
+                "gateway_transport_error": gw_transport_error,
+                "gateway_backend_agent": gw_backend_agent,
+                "failed": bool(result.error),
+            })
 
     summary_path = write_summary_report(summary_items, output_root=output_root)
     logger.info("summary_report", "written", path=summary_path)

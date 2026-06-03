@@ -19,9 +19,16 @@ inputs:
     description: 代码仓库；单仓传 path，多仓重复传 role=path
     type: string
   - name: agent
-    description: Agent CLI 类型（codex、claude、opencode）
+    description: Agent CLI 类型（gateway、codex、claude、opencode）
     type: string
     default: codex
+  - name: gateway_agent
+    description: ACP Agent Gateway Agent 名称（opencode、claude、codex）
+    type: string
+    default: opencode
+  - name: gateway_bin
+    description: ACP Agent Gateway CLI 命令
+    type: string
   - name: model
     description: Agent CLI 模型名（显式指定时传递）
     type: string
@@ -85,6 +92,7 @@ outputs:
 run:
   python: main.py
 agents:
+  - gateway
   - codex
   - claude
   - opencode

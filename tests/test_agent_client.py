@@ -1,12 +1,19 @@
 import json
 import os
 import sys
+import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from zentao_analyzer.agent_client import AgentClient, AgentConfig, extract_json_object, _extract_markdown_json, _repair_json_quotes, _parse_opencode_events
+
+FAKE_GATEWAY = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "fixtures",
+    "fake_gateway.py",
+)
 
 
 class TestAgentClientCore(unittest.TestCase):
@@ -381,6 +388,126 @@ class TestAgentClientOpenCode(unittest.TestCase):
             result = AgentClient(AgentConfig(agent="opencode")).call("prompt")
         self.assertFalse(result.ok)
         self.assertIn("connection refused", result.error)
+
+
+class TestAgentClientGateway(unittest.TestCase):
+    def test_gateway_completed_parses_text_and_session_ref(self):
+        env = {
+            "ACP_AGENT_GATEWAY_BIN": f"python3 {FAKE_GATEWAY}",
+            "FAKE_GATEWAY_MODE": "completed",
+            "FAKE_GATEWAY_TEXT_OUTPUT": '{"conclusion":"完成","evidence":["src/a.c"]}',
+            "FAKE_GATEWAY_SESSION_REF": "sess-agt-1",
+            "FAKE_GATEWAY_STDERR_EVENTS": "true",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            with tempfile.TemporaryDirectory() as td:
+                config = AgentConfig(
+                    agent="gateway",
+                    gateway_agent="opencode",
+                    timeout=5,
+                    cwd=td,
+                )
+                result = AgentClient(config).call("分析这个需求")
+        self.assertTrue(result.ok)
+        self.assertEqual(result.json_data["conclusion"], "完成")
+        self.assertEqual(result.gateway_session_ref, "sess-agt-1")
+        self.assertTrue(len(result.gateway_events) > 0)
+
+    def test_gateway_failed_maps_error_kind_and_records_diagnostics(self):
+        env = {
+            "ACP_AGENT_GATEWAY_BIN": f"python3 {FAKE_GATEWAY}",
+            "FAKE_GATEWAY_MODE": "failed",
+            "FAKE_GATEWAY_ERROR_CODE": "adapter_not_found",
+            "FAKE_GATEWAY_ERROR_MESSAGE": "adapter not found",
+            "FAKE_GATEWAY_SESSION_REF": "sess-fail-agt-1",
+            "FAKE_GATEWAY_STDERR_EVENTS": "true",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            with tempfile.TemporaryDirectory() as td:
+                config = AgentConfig(
+                    agent="gateway",
+                    gateway_agent="opencode",
+                    timeout=5,
+                    cwd=td,
+                )
+                result = AgentClient(config).call("prompt")
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_kind, "config")
+        self.assertEqual(result.gateway_error_code, "adapter_not_found")
+        self.assertEqual(result.gateway_session_ref, "sess-fail-agt-1")
+        self.assertTrue(len(result.gateway_events) > 0)
+
+    def test_gateway_stderr_events_not_in_raw_response(self):
+        env = {
+            "ACP_AGENT_GATEWAY_BIN": f"python3 {FAKE_GATEWAY}",
+            "FAKE_GATEWAY_MODE": "completed",
+            "FAKE_GATEWAY_TEXT_OUTPUT": '{"conclusion":"完成"}',
+            "FAKE_GATEWAY_SESSION_REF": "sess-events-2",
+            "FAKE_GATEWAY_STDERR_EVENTS": "true",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            with tempfile.TemporaryDirectory() as td:
+                config = AgentConfig(
+                    agent="gateway",
+                    gateway_agent="opencode",
+                    timeout=5,
+                    cwd=td,
+                )
+                result = AgentClient(config).call("prompt")
+        self.assertTrue(result.ok)
+        self.assertNotIn("session.created", result.raw_response)
+        self.assertNotIn("turn.completed", result.raw_response)
+        self.assertNotIn("tool.used", result.raw_response)
+
+    def test_gateway_invalid_stdout_becomes_transport_error(self):
+        env = {
+            "ACP_AGENT_GATEWAY_BIN": f"python3 {FAKE_GATEWAY}",
+            "FAKE_GATEWAY_MODE": "invalid_stdout",
+            "FAKE_GATEWAY_SESSION_REF": "sess-tport-1",
+            "FAKE_GATEWAY_STDERR_EVENTS": "true",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            with tempfile.TemporaryDirectory() as td:
+                config = AgentConfig(
+                    agent="gateway",
+                    gateway_agent="opencode",
+                    timeout=5,
+                    cwd=td,
+                )
+                result = AgentClient(config).call("prompt")
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_kind, "runtime")
+        self.assertEqual(result.gateway_transport_error, "gateway_invalid_stdout_json")
+        self.assertEqual(result.gateway_session_ref, "sess-tport-1")
+
+    def test_gateway_missing_gateway_agent_returns_config_error(self):
+        config = AgentConfig(agent="gateway", gateway_agent="", timeout=5)
+        result = AgentClient(config).call("prompt")
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_kind, "config")
+        self.assertIn("gateway-agent", result.error)
+
+    def test_gateway_timeout_error_maps_correctly(self):
+        env = {
+            "ACP_AGENT_GATEWAY_BIN": f"python3 {FAKE_GATEWAY}",
+            "FAKE_GATEWAY_MODE": "timeout",
+            "FAKE_GATEWAY_ERROR_CODE": "timeout",
+            "FAKE_GATEWAY_ERROR_MESSAGE": "request timed out",
+            "FAKE_GATEWAY_SESSION_REF": "sess-timeout-2",
+            "FAKE_GATEWAY_STDERR_EVENTS": "true",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            with tempfile.TemporaryDirectory() as td:
+                config = AgentConfig(
+                    agent="gateway",
+                    gateway_agent="opencode",
+                    timeout=5,
+                    cwd=td,
+                )
+                result = AgentClient(config).call("prompt")
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_kind, "timeout")
+        self.assertEqual(result.gateway_error_code, "timeout")
 
 
 if __name__ == "__main__":

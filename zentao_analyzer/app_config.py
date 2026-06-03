@@ -31,6 +31,10 @@ class RuntimeConfig:
     opencode_command: str = "opencode"
     claude_prompt_via: str = "stdin"
     claude_extra_args: List[str] = dataclasses.field(default_factory=list)
+    gateway_agent: str = ""
+    gateway_bin: str = ""
+    gateway_permission_policy: str = "best-effort-read-only"
+    gateway_idle_timeout: int = 300
     verbose: bool = False
     quiet: bool = False
     log_file: str = ""
@@ -45,7 +49,7 @@ class RuntimeConfig:
             "codex": self.codex_command,
             "opencode": self.opencode_command,
         }
-        return {
+        config = {
             "agent": self.agent,
             "model": self.model,
             "timeout": self.agent_timeout,
@@ -53,7 +57,12 @@ class RuntimeConfig:
             "prompt_via": self.claude_prompt_via,
             "extra_args": list(self.claude_extra_args),
             "cwd": self.repo_path or ".",
+            "gateway_agent": self.gateway_agent,
+            "gateway_bin": self.gateway_bin,
+            "gateway_permission_policy": self.gateway_permission_policy,
+            "gateway_idle_timeout": self.gateway_idle_timeout,
         }
+        return config
 
 
 def _detect_default_agent() -> str:
@@ -72,6 +81,12 @@ def build_runtime_config(args) -> RuntimeConfig:
     prompt_via = str(_first_non_empty(getattr(args, "claude_prompt_via", None), os.environ.get("CLAUDE_PROMPT_VIA"), default="stdin")).lower()
     if prompt_via not in ("stdin", "arg"):
         prompt_via = "stdin"
+    gateway_agent = str(_first_non_empty(getattr(args, "gateway_agent", None), default=""))
+    if agent == "gateway" and not gateway_agent:
+        raise ValueError("--agent gateway 需要 --gateway-agent 参数")
+    gateway_permission_policy = str(_first_non_empty(getattr(args, "gateway_permission_policy", None), default="best-effort-read-only"))
+    if gateway_permission_policy not in ("best-effort-read-only", "strict-read-only"):
+        gateway_permission_policy = "best-effort-read-only"
     return RuntimeConfig(
         agent=agent,
         model=str(_first_non_empty(getattr(args, "model", None), default="")),
@@ -81,6 +96,10 @@ def build_runtime_config(args) -> RuntimeConfig:
         opencode_command=str(_first_non_empty(getattr(args, "opencode_command", None), os.environ.get("OPENCODE_COMMAND"), default="opencode")),
         claude_prompt_via=prompt_via,
         claude_extra_args=list(getattr(args, "claude_extra_arg", None) or []),
+        gateway_agent=gateway_agent,
+        gateway_bin=str(_first_non_empty(getattr(args, "gateway_bin", None), default="")),
+        gateway_permission_policy=gateway_permission_policy,
+        gateway_idle_timeout=_int_value(getattr(args, "gateway_idle_timeout", None), 300),
         verbose=bool(getattr(args, "verbose", False)),
         quiet=bool(getattr(args, "quiet", False)),
         log_file=str(_first_non_empty(getattr(args, "log_file", None), default="")),

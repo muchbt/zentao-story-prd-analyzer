@@ -896,6 +896,10 @@ class AnalysisResult:
     role_evidence_statuses: List[RoleEvidenceStatus] = dataclasses.field(default_factory=list)
     protocol_traces: List[ProtocolTrace] = dataclasses.field(default_factory=list)
     protocol_trace_validation_issues: List[EvidenceValidationIssue] = dataclasses.field(default_factory=list)
+    gateway_session_ref: str = ""
+    gateway_error_code: str = ""
+    gateway_events: List = dataclasses.field(default_factory=list)
+    gateway_transport_error: str = ""
 
     @classmethod
     def from_llm_json(cls, item: ZentaoItem, data: Dict[str, Any], raw_response: str = "") -> "AnalysisResult":

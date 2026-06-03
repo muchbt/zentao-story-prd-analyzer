@@ -30,6 +30,15 @@ python3 main.py --module requirement --id 5939 --analyze --repo-path .
 # 指定 Agent
 python3 main.py --module requirement --id 5939 --analyze --repo-path . --agent claude
 
+# 使用 ACP Agent Gateway 后端（首选）
+python3 main.py --module requirement --id 5939 --analyze --repo-path . \
+  --agent gateway --gateway-agent opencode
+
+# Gateway 多仓分析
+python3 main.py --module requirement --id 5939 --analyze \
+  --repo soc=/path/to/soc --repo mcu=/path/to/mcu \
+  --agent gateway --gateway-agent opencode
+
 # 显式提供代码线索
 python3 main.py --module requirement --id 5939 --analyze --repo-path . \
   --clues calibration,LoadCalibration \
@@ -57,8 +66,56 @@ python3 main.py --module requirement --id 5932 \
   ```
 
   不要用 `zentao user` 检查登录状态：该命令读取用户模块，可能需要额外权限且不是当前会话身份查询。如果目标读取返回 `code: 1004` 或 "Token 已失效"，需要重新登录。注意 `zentao whoami` 命令不存在，请勿使用。
-- 使用 Claude/Codex/OpenCode 后端时，本机分别可执行 `claude`、`codex` 或 `opencode` CLI。
+- 使用 Claude/Codex/OpenCode 后端（legacy）时，本机分别可执行 `claude`、`codex` 或 `opencode` CLI。
+- 使用 Gateway 后端（首选）时，需安装 `acp-agent-gateway` 并在 `PATH` 中可用，或通过 `ACP_AGENT_GATEWAY_BIN` 环境变量或 `--gateway-bin` 指定路径。
 - `--repo-path` 指向当前运行环境可访问的代码仓库。
+
+Gateway 后端真实 adapter 手工冒烟脚本：
+
+```bash
+python3 scripts/smoke_gateway_real_adapter.py \
+  --gateway-agent opencode \
+  --model opencode-go/qwen3.6-plus \
+  --keep
+```
+
+该脚本使用 Provided Requirement 模式和临时目标仓库，不依赖禅道登录；它会真实调用 `acp-agent-gateway` 与所选 adapter/model，并校验 `sessionRef`、summary、debug bundle、PRD 输出边界和 Gateway events 脱敏。
+
+### 离线交付
+
+生成离线交付目录：
+
+```bash
+scripts/build_offline_release.sh <版本号> /path/to/acp-agent-gateway
+```
+
+输出目录：
+
+```text
+release/<版本号>/
+├── zentao-story-prd-analyzer/
+├── gateway/
+│   └── local-acp-agent-gateway-<version>.tgz
+├── install-gateway.sh
+├── preflight.sh
+└── OFFLINE_RELEASE.md
+```
+
+目标机安装 Gateway：
+
+```bash
+cd release/<版本号>
+./install-gateway.sh
+./preflight.sh
+```
+
+`install-gateway.sh` 默认执行 `npm install -g <gateway.tgz> --offline`。Gateway tarball 不内置 npm 依赖，因此目标机需要预置 npm cache、内部 npm 镜像，或提前安装 Gateway 依赖包。如需使用内网 npm registry，可覆盖安装参数：
+
+```bash
+NPM_INSTALL_FLAGS="--registry <internal-registry> --prefer-offline" ./install-gateway.sh
+```
+
+ACP adapters 仍是显式运行时依赖；安装后通过 `acp-agent-gateway doctor` 确认 `opencode`、`claude` 或 `codex` adapter 可用。
 
 ### `SKILL.yaml` 的作用
 

@@ -384,6 +384,10 @@ def analyze(
             result = AnalysisResult.from_error(item, llm_data["error"], raw_response=llm_data.get("raw", ""), error_kind=llm_data.get("error_kind", ""))
             result.seed_locations = seed_result.seed_locations
             result.rejected_seed_paths = seed_result.rejected_seed_paths
+            result.gateway_session_ref = llm_data.get("gateway_session_ref", "")
+            result.gateway_error_code = llm_data.get("gateway_error_code", "")
+            result.gateway_events = llm_data.get("gateway_events", [])
+            result.gateway_transport_error = llm_data.get("gateway_transport_error", "")
             return result
 
         if item.type in ("story", "requirement"):
@@ -407,4 +411,8 @@ def analyze(
                 if msg not in result.evidence:
                     result.evidence.append(msg)
             _apply_insufficient_evidence_guard(item, result)
+        result.gateway_session_ref = llm_data.get("gateway_session_ref", "")
+        result.gateway_error_code = llm_data.get("gateway_error_code", "")
+        result.gateway_events = llm_data.get("gateway_events", [])
+        result.gateway_transport_error = llm_data.get("gateway_transport_error", "")
     return result

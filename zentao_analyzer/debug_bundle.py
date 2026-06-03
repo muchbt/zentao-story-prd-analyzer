@@ -138,6 +138,18 @@ class DebugBundle:
         safe_id = _safe_part(item_id)
         self._write_json(os.path.join("code_impact_validation", f"{safe_id}.json"), {"issues": _to_plain(issues)})
 
+    def write_gateway_events(self, item_id: str, events: List[Dict[str, Any]]) -> None:
+        if not self.enabled:
+            return
+        safe_id = _safe_part(item_id)
+        self._write_json(os.path.join("gateway_events", f"{safe_id}.json"), _to_plain(events))
+
+    def write_gateway_diagnostics(self, item_id: str, payload: Dict[str, Any]) -> None:
+        if not self.enabled:
+            return
+        safe_id = _safe_part(item_id)
+        self._write_json(os.path.join("gateway_diagnostics", f"{safe_id}.json"), payload)
+
 
 def build_debug_bundle(enabled: bool, base_dir: str = "", module: str = "", run_id: str = "", timestamp: str = "", include_code: bool = False) -> DebugBundle:
     if not enabled:

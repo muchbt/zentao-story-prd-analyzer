@@ -5,6 +5,7 @@ import subprocess
 import time
 from typing import Any, Dict, List, Optional
 
+from .gateway_client import GatewayConfig, call_gateway_start_session
 from .run_logger import redact_sensitive
 
 
@@ -17,6 +18,10 @@ class AgentConfig:
     prompt_via: str = "stdin"
     extra_args: List[str] = dataclasses.field(default_factory=list)
     cwd: str = "."
+    gateway_agent: str = ""
+    gateway_bin: str = ""
+    gateway_permission_policy: str = "best-effort-read-only"
+    gateway_idle_timeout: int = 300
 
 
 @dataclasses.dataclass
@@ -30,6 +35,10 @@ class AgentResult:
     duration_ms: int = 0
     agent: str = ""
     model: str = ""
+    gateway_error_code: str = ""
+    gateway_session_ref: str = ""
+    gateway_events: List[Dict[str, Any]] = dataclasses.field(default_factory=list)
+    gateway_transport_error: str = ""
 
 
 def _now_ms() -> int:
@@ -276,6 +285,8 @@ class AgentClient:
             return self._call_codex(prompt)
         if agent == "opencode":
             return self._call_opencode(prompt)
+        if agent == "gateway":
+            return self._call_gateway(prompt)
         return AgentResult(ok=False, error_kind="config", error=f"未识别 agent: {agent}", agent=agent, model=self.config.model)
 
     def _parse_text(self, text: str, raw_agent: str, model: str, duration_ms: int = 0) -> AgentResult:
@@ -521,3 +532,91 @@ class AgentClient:
             return self._parse_text(text_content.strip(), raw_agent="opencode", model=self.config.model, duration_ms=_now_ms() - started)
 
         return self._parse_text(stdout.strip(), raw_agent="opencode", model=self.config.model, duration_ms=_now_ms() - started)
+
+    def _call_gateway(self, prompt: str) -> AgentResult:
+        started = _now_ms()
+        if not self.config.gateway_agent:
+            return AgentResult(
+                ok=False,
+                error_kind="config",
+                error="--agent gateway 需要 --gateway-agent 参数",
+                agent="gateway",
+                model=self.config.model,
+                duration_ms=_now_ms() - started,
+            )
+        gw_config = GatewayConfig(
+            gateway_agent=self.config.gateway_agent,
+            gateway_bin=self.config.gateway_bin,
+            permission_policy=self.config.gateway_permission_policy,
+            idle_timeout=self.config.gateway_idle_timeout,
+            timeout=self.config.timeout,
+            model=self.config.model,
+        )
+        gw_result = call_gateway_start_session(
+            prompt=prompt,
+            cwd=self.config.cwd or ".",
+            config=gw_config,
+        )
+        if gw_result.ok:
+            return self._parse_gateway_success(gw_result)
+        return self._parse_gateway_failure(gw_result, started)
+
+    def _parse_gateway_success(self, gw_result) -> AgentResult:
+        text = gw_result.text or ""
+        redacted_text = redact_sensitive(text)
+        if not text or "{" not in text:
+            return AgentResult(
+                ok=False,
+                text=redacted_text,
+                raw_response=redacted_text,
+                error="Agent 返回内容不含 JSON",
+                error_kind="parse_empty",
+                duration_ms=gw_result.duration_ms,
+                agent="gateway",
+                model=self.config.model,
+                gateway_session_ref=gw_result.session_ref,
+                gateway_events=gw_result.events,
+            )
+        try:
+            data = extract_json_object(text)
+        except json.JSONDecodeError:
+            return AgentResult(
+                ok=False,
+                text=redacted_text,
+                raw_response=redacted_text,
+                error="LLM 返回非 JSON",
+                error_kind="parse",
+                duration_ms=gw_result.duration_ms,
+                agent="gateway",
+                model=self.config.model,
+                gateway_session_ref=gw_result.session_ref,
+                gateway_events=gw_result.events,
+            )
+        return AgentResult(
+            ok=True,
+            text=redacted_text,
+            json_data=redact_sensitive(data),
+            raw_response=redacted_text,
+            duration_ms=gw_result.duration_ms,
+            agent="gateway",
+            model=self.config.model,
+            gateway_session_ref=gw_result.session_ref,
+            gateway_events=gw_result.events,
+        )
+
+    def _parse_gateway_failure(self, gw_result, started: int) -> AgentResult:
+        error_text = gw_result.error or ""
+        if gw_result.transport_error:
+            error_text = error_text or f"网关传输错误: {gw_result.transport_error}"
+        return AgentResult(
+            ok=False,
+            error=redact_sensitive(error_text),
+            error_kind=gw_result.error_kind or "runtime",
+            duration_ms=gw_result.duration_ms,
+            agent="gateway",
+            model=self.config.model,
+            gateway_error_code=gw_result.error_code,
+            gateway_session_ref=gw_result.session_ref,
+            gateway_events=gw_result.events,
+            gateway_transport_error=gw_result.transport_error,
+        )

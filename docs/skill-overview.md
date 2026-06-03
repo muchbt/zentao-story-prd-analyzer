@@ -6,11 +6,12 @@
 
 | Agent | 调用方式 |
 | --- | --- |
-| `claude` | 本机 `claude` CLI |
-| `codex` | 本机 `codex exec` |
-| `opencode` | 本机 `opencode run` |
+| `gateway` | ACP Agent Gateway（`acp-agent-gateway start-session`），首选后端 |
+| `claude` | 本机 `claude` CLI（legacy） |
+| `codex` | 本机 `codex exec`（legacy） |
+| `opencode` | 本机 `opencode run`（legacy） |
 
-直接运行 `main.py` 且未显式指定 `--agent` 时，默认检测顺序为 `claude`、`codex`、`opencode`。通过 `SKILL.md` 触发时应显式传入与宿主 CLI 一致的 `--agent`。
+直接运行 `main.py` 且未显式指定 `--agent` 时，默认检测顺序为 `claude`、`codex`、`opencode`；Gateway 不会作为默认选项。通过 `SKILL.md` 触发时应优先使用 Gateway 后端 (`--agent gateway --gateway-agent <host-agent>`)，不可用时回退到 legacy 后端。
 
 ## 输入线索
 

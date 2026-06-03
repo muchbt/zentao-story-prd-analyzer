@@ -19,6 +19,10 @@ def build_summary_item(
     invalid_evidence_count: int = 0,
     debug_bundle: str = "",
     repo_set: Optional[RepositorySet] = None,
+    gateway_session_ref: str = "",
+    gateway_error_code: str = "",
+    gateway_transport_error: str = "",
+    gateway_backend_agent: str = "",
 ) -> Dict[str, Any]:
     """为单个条目构建汇总数据结构，排除敏感信息"""
     result: Dict[str, Any] = {
@@ -47,6 +51,14 @@ def build_summary_item(
         "writeback": writeback,
         "requirement_source": getattr(item, "requirement_source", "zentao") or "zentao",
     }
+    if gateway_session_ref:
+        result["gateway_session_ref"] = gateway_session_ref
+    if gateway_error_code:
+        result["gateway_error_code"] = gateway_error_code
+    if gateway_transport_error:
+        result["gateway_transport_error"] = gateway_transport_error
+    if gateway_backend_agent:
+        result["gateway_backend_agent"] = gateway_backend_agent
     rps_raw = getattr(analysis, "requirement_points", None)
     rps = list(rps_raw) if rps_raw else []
     analysis_status = str(getattr(analysis, "analysis_status", "") or "")

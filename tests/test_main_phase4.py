@@ -235,6 +235,36 @@ class TestMainPhase4(unittest.TestCase):
             self.assertNotIn("private-password", message)
             self.assertNotIn("clue-secret", message)
 
+    def test_gateway_parse_retry_command_preserves_idle_timeout(self):
+        with tempfile.TemporaryDirectory() as td:
+            item = make_item()
+            analysis = make_analysis()
+            analysis.conclusion = "无法判断"
+            analysis.error = "LLM 返回非 JSON"
+            analysis.error_kind = "parse"
+            analysis.confidence = ""
+            argv = [
+                "zentao_analyzer.main.py", "--module", "requirement", "--id", "5939",
+                "--analyze", "--repo-path", td, "--output-root", td,
+                "--agent", "gateway", "--gateway-agent", "opencode",
+                "--gateway-bin", "acp-agent-gateway",
+                "--gateway-permission-policy", "strict-read-only",
+                "--gateway-idle-timeout", "42",
+                "--quiet",
+            ]
+            with patch.object(main.ZentaoClient, "get_item", return_value=item):
+                with patch("zentao_analyzer.main.analyze", return_value=analysis):
+                    with patch.object(sys, "argv", argv):
+                        stderr = io.StringIO()
+                        with contextlib.redirect_stderr(stderr):
+                            code = main.main()
+            self.assertEqual(code, 0)
+            message = stderr.getvalue()
+            self.assertIn("--gateway-agent opencode", message)
+            self.assertIn("--gateway-bin acp-agent-gateway", message)
+            self.assertIn("--gateway-permission-policy strict-read-only", message)
+            self.assertIn("--gateway-idle-timeout 42", message)
+
     def test_batch_parse_failure_marks_only_failed_item_as_retryable(self):
         with tempfile.TemporaryDirectory() as td:
             succeeded_item = make_item()
