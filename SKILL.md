@@ -25,6 +25,7 @@ Terms:
 - Check the analyzer with `python3 <ANALYZER_DIR>/main.py --help`.
 - Check `zentao` with `command -v zentao` and, when needed, `zentao profile`. Do not use `zentao user` as an auth check; the analyzer item fetch validates auth.
 - Prefer Gateway: `--agent gateway --gateway-agent <opencode|claude|codex>`. Legacy direct backends are `--agent claude`, `--agent codex`, and `--agent opencode`.
+- Prefer the CLI/backend matching the current host Agent: Claude Code uses `--gateway-agent claude`, Codex uses `--gateway-agent codex`, and OpenCode uses `--gateway-agent opencode`; choose a different backend only when the user explicitly asks or the matching CLI is unavailable.
 - Never print tokens, passwords, API keys, Authorization headers, or login commands containing secrets.
 
 ## Invocation
@@ -32,7 +33,7 @@ Terms:
 Base command:
 
 ```bash
-python3 <ANALYZER_DIR>/main.py --module <module> --id <zentao_id> --analyze \
+python3 <ANALYZER_DIR>/main.py --module requirement --id <zentao_id> --analyze \
   --repo-path <target_repo> --agent gateway --gateway-agent <opencode|claude|codex> \
   --agent-timeout 900 --quiet
 ```
@@ -42,7 +43,8 @@ Rules:
 - Default to `--analyze`; add `--quiet` when stdout must stay machine-readable JSON.
 - Prefer `--repo`; keep `--repo-path` only for compatible single-repo calls.
 - Use real Zentao modules only: `story`, `requirement`, `bug`, `task`, `ticket`, `feedback`. Never use `--module issue`; ISSUE is an output type.
-- Map user language carefully: "需求"/`requirement` => `--module requirement`; "缺陷"/`bug` => `--module bug`; "Story"/"故事" => `--module story`.
+- Default requirement/story-like analysis to `--module requirement`: "需求", `requirement`, "Story", and "故事" all mean `requirement` unless the user explicitly says the Zentao module is `story`.
+- Use `--module bug` for "缺陷"/`bug`.
 - Do not use removed options: `--keywords`, `--symbols`, `--incremental`, `--last-commit`.
 - Use `--clues` for Search Hints and `--paths` only for repository files. Multi-repo Seed Paths need `role=relative/path.c` or a Structured Clue File.
 - Use `--protocol-hint roles:type=value`, e.g. `--protocol-hint soc,mcu:cmd_id=0x1234`; ask before guessing hint type, role, or item ownership.
@@ -106,6 +108,7 @@ Protocol Hints guide search and protocol-trace reporting; they are not Requireme
 ## Failure Handling
 
 - If `zentao` is missing or authentication fails, report the analyzer error and stop.
+- If Zentao reports a server/network exception, such as error code `1002`, service address unreachable, connection refused, timeout, or DNS failure, report it and stop. Do not switch profiles, try alternate servers, or automatically retry. Ask the user to manually run the relevant `zentao` command successfully first, then rerun the analyzer.
 - If LLM/Agent execution fails, report the analyzer error and debug bundle path if present.
 - For `analysis[].retryable == true` with `retry_reason == "agent_response_parse_failed"`, say the Agent returned an unparseable structured response and ask before rerun. Do not rerun automatically.
 - In batch analysis, offer only the analyzer-provided redacted retry command for failed items; do not suggest rerunning successful items.

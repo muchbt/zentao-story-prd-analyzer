@@ -96,12 +96,29 @@ release/<版本号>/
 ├── zentao-story-prd-analyzer/
 ├── gateway/
 │   └── local-acp-agent-gateway-<version>.tgz
+├── install.sh
+├── install-skill.sh
 ├── install-gateway.sh
 ├── preflight.sh
 └── OFFLINE_RELEASE.md
 ```
 
-目标机安装 Gateway：
+目标机完整安装：
+
+```bash
+cd release/<版本号>
+./install.sh
+```
+
+`install.sh` 会依次安装 analyzer Skill、安装 Gateway、运行预检。Skill 默认安装到 `SKILL_INSTALL_ROOT`；未设置时优先使用 `~/.agents/skills`，否则使用 `${CODEX_HOME:-~/.codex}/skills`。也可以只安装 Skill：
+
+```bash
+SKILL_INSTALL_ROOT=/path/to/skills ./install-skill.sh
+# 或
+./install-skill.sh /path/to/skills
+```
+
+单独安装 Gateway：
 
 ```bash
 cd release/<版本号>
@@ -109,7 +126,7 @@ cd release/<版本号>
 ./preflight.sh
 ```
 
-`install-gateway.sh` 默认执行 `npm install -g <gateway.tgz> --offline`。Gateway tarball 不内置 npm 依赖，因此目标机需要预置 npm cache、内部 npm 镜像，或提前安装 Gateway 依赖包。如需使用内网 npm registry，可覆盖安装参数：
+`install-gateway.sh` 默认执行 `npm install -g <gateway.tgz> --offline`。Gateway tarball 内置自身运行时 npm 依赖，因此安装 Gateway 本身不依赖目标机 npm cache 中的 `@agentclientprotocol/sdk` 或 `zod`。如需使用内网 npm registry，可覆盖安装参数：
 
 ```bash
 NPM_INSTALL_FLAGS="--registry <internal-registry> --prefer-offline" ./install-gateway.sh
