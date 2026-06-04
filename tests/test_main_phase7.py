@@ -90,7 +90,7 @@ class TestValidateProvidedRequirementArgs(unittest.TestCase):
     def test_requirement_file_rejects_bug_module(self):
         args = MagicMock(requirement_file="/tmp/req.txt", title="标题", id="1", module="bug", login=False, server=None, user=None, password=None, token=None, project=None, product=None, execution=None)
         result = main._validate_provided_requirement_args(args)
-        self.assertIn("story 或 requirement", result)
+        self.assertIn("requirement（用户需求）或 story（软件需求）", result)
 
     def test_requirement_file_rejects_login(self):
         args = MagicMock(requirement_file="/tmp/req.txt", title="标题", id="1", module="requirement", login=True, server=None, user=None, password=None, token=None, project=None, product=None, execution=None)

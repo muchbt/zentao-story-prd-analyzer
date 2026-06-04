@@ -108,5 +108,34 @@ class TestMainPhase3(unittest.TestCase):
             self.assertFalse(os.path.exists(os.path.join(td, "prd")))
             self.assertFalse(os.path.exists(os.path.join(td, "issue")))
 
+    def test_missing_module_defaults_to_user_requirement_with_prompt(self):
+        mock_item = MagicMock()
+        mock_item.id = "5939"
+        mock_item.type = "requirement"
+        mock_item.title = "T"
+        mock_item.description = "D"
+        mock_item.status = "active"
+        mock_item.priority = ""
+        mock_item.project = ""
+        mock_item.product = ""
+        mock_item.execution = ""
+        mock_item.assigned_to = ""
+        mock_item.created_by = ""
+        mock_item.created_date = ""
+        mock_item.requirement_source = "zentao"
+
+        with patch.object(main.ZentaoClient, "get_item", return_value=mock_item) as mock_get_item:
+            with patch.object(sys, "argv", [
+                "zentao_analyzer.main.py", "--id", "5939", "--quiet",
+            ]):
+                stdout = io.StringIO()
+                stderr = io.StringIO()
+                with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                    code = main.main()
+
+        self.assertEqual(code, 0)
+        mock_get_item.assert_called_once_with("requirement", "5939")
+        self.assertIn("已按用户需求 requirement 处理", stderr.getvalue())
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

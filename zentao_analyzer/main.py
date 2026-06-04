@@ -108,7 +108,7 @@ def _validate_provided_requirement_args(args, cli_args=None):
             return "--title 仅在 --requirement-file 模式下有效"
         return None
     if args.module not in ("story", "requirement"):
-        return "--requirement-file 仅支持 story 或 requirement 模块"
+        return "--requirement-file 仅支持 requirement（用户需求）或 story（软件需求）模块"
     if not args.id:
         return "--requirement-file 需要 --id 参数作为输出关联标识"
     if not args.title:
@@ -152,7 +152,7 @@ def _load_provided_requirement(args):
 
 def main():
     parser = argparse.ArgumentParser(description="zentao-story-prd-analyzer")
-    parser.add_argument("--module", default="story", help="禅道模块 (story/requirement/bug/task/ticket/feedback)")
+    parser.add_argument("--module", default="requirement", help="禅道模块 (requirement=用户需求/story=软件需求/bug/task/ticket/feedback)")
     parser.add_argument("--id", help="禅道条目 ID（指定则获取单条详情）")
     parser.add_argument("--project", default=os.environ.get("PROJECT_ID", "1"), help="项目 ID")
     parser.add_argument("--product", help="产品 ID")
@@ -194,9 +194,12 @@ def main():
     parser.add_argument("--clues-file", help="结构化代码线索 JSON 文件，支持 repositories 和按条目隔离的 items")
     parser.add_argument("--protocol-hint", action="append", help="通信协议线索，可重复；格式 [role1,role2:]type=value 或文本")
     parser.add_argument("--output-root", default="docs", help="PRD/ISSUE 文档输出根目录")
-    parser.add_argument("--requirement-file", help="用户提供的需求正文文件路径；与 --id 和 --title 一起使用，不从禅道读取")
-    parser.add_argument("--title", help="需求标题；Provided Requirement 模式下必须提供")
+    parser.add_argument("--requirement-file", help="用户提供的用户需求或软件需求正文文件路径；与 --id 和 --title 一起使用，不从禅道读取")
+    parser.add_argument("--title", help="用户需求或软件需求标题；Provided Requirement 模式下必须提供")
     args = parser.parse_args()
+    module_was_explicit = any(arg == "--module" or arg.startswith("--module=") for arg in sys.argv[1:])
+    if not module_was_explicit and not args.login:
+        print("[提示] 未指定 --module，已按用户需求 requirement 处理；软件需求请显式使用 --module story。", file=sys.stderr)
 
     requirement_file_error = _validate_provided_requirement_args(args, sys.argv[1:])
     if requirement_file_error:

@@ -77,10 +77,12 @@ python3 main.py --module story --project 3 --status open --limit 10 --analyze --
 | `ticket` | 工单 |
 | `feedback` | 反馈 |
 
+未指定 `--module` 时，CLI 默认按用户需求 `requirement` 处理，并在 stderr 提示；若要处理软件需求，请显式使用 `--module story`。自然语言中只说“需求”时也按用户需求处理。
+
 ## 常用运行模式
 
 ```bash
-# 基础：单个需求分析
+# 基础：单个用户需求分析
 python3 main.py --module requirement --id 5939 --analyze --repo-path . --agent claude
 
 # 提供代码线索：Search Hint（指导 Agent 搜索）+ Seed Path（预加载文件）
@@ -109,9 +111,9 @@ python3 main.py --module requirement --id 5939 --analyze --repo-path . --agent c
 python3 main.py --module requirement --id 5939 --output result.json
 ```
 
-## 提供需求正文模式（不从禅道读取）
+## 提供用户需求或软件需求正文模式（不从禅道读取）
 
-当用户直接提供完整需求正文（而非禅道条目）时：
+当用户直接提供完整用户需求或软件需求正文（而非禅道条目）时：
 
 ```bash
 python3 main.py --module requirement --id 5932 \
@@ -121,7 +123,7 @@ python3 main.py --module requirement --id 5932 \
 ```
 
 规则：
-- `--requirement-file` 仅支持 `requirement` 或 `story` 模块
+- `--requirement-file` 仅支持 `requirement`（用户需求）或 `story`（软件需求）模块
 - 需同时提供非空的 `--id` 和 `--title`
 - 该模式下不调用禅道读取或登录，ID 仅作输出标识
 - `--requirement-file` 与 `--login`、禅道认证参数不能同时使用

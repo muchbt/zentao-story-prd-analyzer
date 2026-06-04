@@ -43,7 +43,9 @@ Rules:
 - Default to `--analyze`; add `--quiet` when stdout must stay machine-readable JSON.
 - Prefer `--repo`; keep `--repo-path` only for compatible single-repo calls.
 - Use real Zentao modules only: `story`, `requirement`, `bug`, `task`, `ticket`, `feedback`. Never use `--module issue`; ISSUE is an output type.
-- Default requirement/story-like analysis to `--module requirement`: "需求", `requirement`, "Story", and "故事" all mean `requirement` unless the user explicitly says the Zentao module is `story`.
+- Map Zentao modules precisely: `requirement` means 用户需求, and `story` means 软件需求.
+- If the user says only "需求" without saying 用户需求 or 软件需求, use `--module requirement` and tell them: "已按用户需求 requirement 处理；软件需求请说明 story 或 软件需求。"
+- Use `--module story` when the user says `story`, "故事", or "软件需求".
 - Use `--module bug` for "缺陷"/`bug`.
 - Do not use removed options: `--keywords`, `--symbols`, `--incremental`, `--last-commit`.
 - Use `--clues` for Search Hints and `--paths` only for repository files. Multi-repo Seed Paths need `role=relative/path.c` or a Structured Clue File.
@@ -58,7 +60,7 @@ The Agent subprocess is read/search-only. It must return structured JSON to the 
 When the user provides requirement text instead of a Zentao ID:
 - Ask for an ID if missing; it is only for output naming and must not trigger a Zentao lookup.
 - Confirm the title, write the text to a temp file, and call with `--requirement-file`, `--id`, and `--title`.
-- `--requirement-file` is valid only with `--module requirement` or `--module story`, and requires both `--id` and `--title`.
+- `--requirement-file` is valid only with `--module requirement` (用户需求) or `--module story` (软件需求), and requires both `--id` and `--title`.
 - The analyzer must not call `ZentaoClient.get_item()`, `list_items()`, or login; output source is `provided_requirement`.
 - Logs and stderr must not echo the full requirement text.
 

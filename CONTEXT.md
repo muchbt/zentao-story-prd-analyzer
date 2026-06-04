@@ -10,6 +10,14 @@
 从禅道读取的输入对象，例如 `story`、`requirement`、`bug`、`task`、`ticket` 或 `feedback`。
 _Avoid_: ISSUE、输出文档
 
+**Zentao User Requirement**:
+禅道 `requirement` 模块中的用户需求，描述用户或市场侧提出的原始需求意图。
+_Avoid_: 软件需求、Story
+
+**Zentao Software Requirement**:
+禅道 `story` 模块中的软件需求，描述从用户需求拆解或承接出的软件实现需求。
+_Avoid_: 用户需求、Requirement
+
 **Provided Requirement**:
 用户主动提交的完整需求正文，并由用户确认需求 ID 的功能需求输入。
 _Avoid_: Search Hint、补充说明
@@ -151,6 +159,8 @@ _Avoid_: Requirement Source、PRD Document
 ## Relationships
 
 - 一个 **Feature Item** 在一次分析中只使用一个 **Requirement Source**。
+- 禅道 `requirement` 对应 **Zentao User Requirement**；禅道 `story` 对应 **Zentao Software Requirement**。
+- **Zentao Software Requirement** 可在业务流程上由 **Zentao User Requirement** 创建或承接，但两者在术语和模块参数上不能互换。
 - 一个 **Provided Requirement** 只有在用户确认需求 ID 后才能成为 **Feature Item**。
 - 一个 **Provided Requirement** 在正式分析前必须具备用户确认的 **Provided Requirement Title**；Agent 可推荐标题但不能将未确认标题作为正式输出身份。
 - **Provided Requirement** 的 ID 仅用于标识和文档关联，不触发禅道读取或需求正文合并。

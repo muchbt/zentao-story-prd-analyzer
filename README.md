@@ -44,7 +44,7 @@ python3 main.py --module requirement --id 5939 --analyze --repo-path . \
   --clues calibration,LoadCalibration \
   --paths src/calib/import_config.c
 
-# 提供需求正文模式：不从禅道读取，直接用用户提交的完整需求生成 PRD
+# 提供用户需求正文模式：不从禅道读取，直接用用户提交的完整用户需求生成 PRD
 python3 main.py --module requirement --id 5932 \
   --title "Ecall功能的优先级定义" \
   --requirement-file /tmp/requirement-5932.txt \
@@ -61,8 +61,8 @@ python3 main.py --module requirement --id 5932 \
   # 查看当前 profile（* 标记为活跃会话；该命令不验证 token）
   zentao profile
 
-  # 直接读取待分析条目；成功即说明此次读取所需认证有效
-  zentao --format json --machine-readable get requirement <需求ID>
+  # 直接读取待分析的用户需求条目；成功即说明此次读取所需认证有效
+  zentao --format json --machine-readable get requirement <用户需求ID>
   ```
 
   不要用 `zentao user` 检查登录状态：该命令读取用户模块，可能需要额外权限且不是当前会话身份查询。如果目标读取返回 `code: 1004` 或 "Token 已失效"，需要重新登录。注意 `zentao whoami` 命令不存在，请勿使用。
@@ -179,9 +179,9 @@ run:
 - 禅道 SKILL: https://www.zentao.net/book/zentaopms/2315.html
 - Token 消耗模型: [`docs/TOKEN_COST.md`](docs/TOKEN_COST.md)（第一版，随分析方案演进需更新）
 
-### 提供需求正文模式
+### 提供用户需求或软件需求正文模式
 
-除从禅道读取需求外，支持用户直接提供完整需求正文：
+除从禅道读取条目外，支持用户直接提供完整用户需求或软件需求正文：
 
 ```bash
 python3 main.py --module requirement \
@@ -193,7 +193,7 @@ python3 main.py --module requirement \
 
 规则：
 
-- `--requirement-file` 仅支持 `requirement` 或 `story` 模块。
+- `--requirement-file` 仅支持 `requirement`（用户需求）或 `story`（软件需求）模块。
 - `--requirement-file` 需要同时提供非空 `--id` 和 `--title`。
 - 该模式不调用禅道读取或登录；ID 仅作为输出关联标识。
 - 文件必须可读且内容非空，否则在调用 Agent 前失败。
@@ -259,7 +259,7 @@ python3 main.py --module requirement --id 5939
 ```
 
 ```bash
-# 获取单个 story 详情
+# 获取单个软件需求 story 详情
 python3 main.py --module story --id 123
 
 # 获取某个项目下的 bug 列表
@@ -288,6 +288,8 @@ python3 main.py --module story --project 3 --analyze --repo-path ./my-repo
 | `task` | 任务 |
 | `ticket` | 工单 |
 | `feedback` | 反馈 |
+
+未指定 `--module` 时，CLI 默认按用户需求 `requirement` 处理，并在 stderr 提示；若要处理软件需求，请显式使用 `--module story`。自然语言中只说“需求”时也按用户需求处理。
 
 ### 错误处理
 
