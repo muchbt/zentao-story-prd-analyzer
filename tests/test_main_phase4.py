@@ -322,6 +322,33 @@ class TestMainPhase4(unittest.TestCase):
             self.assertIn("条目 5939", message)
             self.assertIn("Agent 响应无法解析为结构化结果", message)
 
+    def test_gateway_empty_response_is_retryable_and_prints_retry_command(self):
+        with tempfile.TemporaryDirectory() as td:
+            item = make_item()
+            analysis = make_analysis()
+            analysis.conclusion = "无法判断"
+            analysis.error = "Agent completed but returned no final text via ACP"
+            analysis.error_kind = "gateway_empty_response"
+            analysis.confidence = ""
+            argv = [
+                "zentao_analyzer.main.py", "--module", "requirement", "--id", "5939",
+                "--analyze", "--repo-path", td, "--output-root", td,
+                "--agent", "gateway", "--gateway-agent", "opencode", "--quiet",
+            ]
+            with patch.object(main.ZentaoClient, "get_item", return_value=item):
+                with patch("zentao_analyzer.main.analyze", return_value=analysis):
+                    with patch.object(sys, "argv", argv):
+                        stdout = io.StringIO()
+                        stderr = io.StringIO()
+                        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                            code = main.main()
+            self.assertEqual(code, 0)
+            parsed = json.loads(stdout.getvalue())
+            self.assertTrue(parsed["analysis"][0]["retryable"])
+            self.assertEqual(parsed["analysis"][0]["retry_reason"], "agent_response_parse_failed")
+            self.assertTrue(parsed["has_retryable_failure"])
+            self.assertIn("条目 5939", stderr.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

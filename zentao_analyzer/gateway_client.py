@@ -256,13 +256,14 @@ def call_gateway_start_session(
         text = result_json.get("text", "")
         stop_reason = result_json.get("stopReason", "") or result_json.get("stop_reason", "")
         if stop_reason == "empty_response" or not text:
+            error_code = "agent_empty_response"
             return GatewayResult(
                 ok=False,
                 text="",
                 stop_reason=stop_reason or "empty_response",
-                error_code="agent_empty_response",
+                error_code=error_code,
                 error="Agent completed but returned no final text via ACP",
-                error_kind="runtime",
+                error_kind=_map_gateway_error(error_code),
                 session_ref=session_ref,
                 events=events,
                 duration_ms=_now_ms() - started,

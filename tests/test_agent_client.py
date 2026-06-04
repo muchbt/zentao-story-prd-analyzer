@@ -437,6 +437,28 @@ class TestAgentClientGateway(unittest.TestCase):
         self.assertEqual(result.gateway_session_ref, "sess-fail-agt-1")
         self.assertTrue(len(result.gateway_events) > 0)
 
+    def test_gateway_empty_completed_response_maps_to_retryable_kind(self):
+        env = {
+            "ACP_AGENT_GATEWAY_BIN": f"python3 {FAKE_GATEWAY}",
+            "FAKE_GATEWAY_MODE": "completed",
+            "FAKE_GATEWAY_TEXT_OUTPUT": "",
+            "FAKE_GATEWAY_SESSION_REF": "sess-empty-agt-1",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            with tempfile.TemporaryDirectory() as td:
+                config = AgentConfig(
+                    agent="gateway",
+                    gateway_agent="opencode",
+                    timeout=5,
+                    cwd=td,
+                )
+                result = AgentClient(config).call("prompt")
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_kind, "gateway_empty_response")
+        self.assertEqual(result.gateway_error_code, "agent_empty_response")
+        self.assertEqual(result.gateway_stop_reason, "empty_response")
+        self.assertEqual(result.gateway_session_ref, "sess-empty-agt-1")
+
     def test_gateway_stderr_events_not_in_raw_response(self):
         env = {
             "ACP_AGENT_GATEWAY_BIN": f"python3 {FAKE_GATEWAY}",

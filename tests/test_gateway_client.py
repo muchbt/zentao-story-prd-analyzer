@@ -132,6 +132,28 @@ class TestGatewayStartSession(unittest.TestCase):
         self.assertEqual(result.session_ref, "sess-fail-1")
         self.assertIn("adapter", result.error.lower())
 
+    def test_completed_empty_response_maps_to_retryable_gateway_kind(self):
+        config = GatewayConfig(gateway_bin="acp-agent-gateway", gateway_agent="opencode", timeout=5)
+        completed = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=json.dumps({
+                "status": "completed",
+                "text": "",
+                "stopReason": "empty_response",
+                "sessionRef": "sess-empty-1",
+            }),
+            stderr="",
+        )
+        with tempfile.TemporaryDirectory() as td:
+            with patch("zentao_analyzer.gateway_client.subprocess.run", return_value=completed):
+                result = call_gateway_start_session("prompt", td, config)
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_code, "agent_empty_response")
+        self.assertEqual(result.error_kind, "gateway_empty_response")
+        self.assertEqual(result.stop_reason, "empty_response")
+        self.assertEqual(result.session_ref, "sess-empty-1")
+
     def test_invalid_stdout_returns_transport_error(self):
         config = GatewayConfig(gateway_agent="opencode", timeout=5)
         env = {
